@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { BrasilLogo } from '@/components/BrasilLogo';
 import { 
   Building2, 
   MessageCircle, 
@@ -106,9 +107,7 @@ function BusinessDashboardContent() {
             </Link>
             <div className="h-5 w-[1px] bg-[#182836]" />
             <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-lg bg-amber-950/80 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold text-xs">
-                PE
-              </span>
+              <BrasilLogo size={28} className="w-7 h-7 !rounded-lg" />
               <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
                 Painel da Empresa
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Shield, ArrowLeft, CheckCircle, Scale, FileText } from 'lucide-react';
+import { BrasilLogo } from '@/components/BrasilLogo';
 
 export const metadata = {
   title: 'Termos de Uso | Patriota Indica',
@@ -20,9 +21,7 @@ export default function TermosPage() {
             <span>Voltar ao Início</span>
           </Link>
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded bg-emerald-950 border border-amber-500/50 text-amber-300 flex items-center justify-center font-bold text-xs">
-              PI
-            </span>
+            <BrasilLogo size={24} className="w-6 h-6 !rounded-md" />
             <span className="font-semibold text-white text-sm">Patriota Indica</span>
           </div>
         </div>

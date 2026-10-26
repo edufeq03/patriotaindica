@@ -110,9 +110,9 @@ async def submit_business_application(
     client_ip = get_client_ip(request)
     await check_rate_limit(
         key=f"ratelimit:application:{client_ip}",
-        limit=3,
+        limit=10,
         window_seconds=86400,
-        error_msg="Limite de 3 candidaturas por dia atingido para seu endereço IP.",
+        error_msg="Limite de 10 candidaturas por dia atingido para seu endereço IP.",
     )
 
     # Geração robusta de slug (M6)

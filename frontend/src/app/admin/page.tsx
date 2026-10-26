@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { BrasilLogo } from '@/components/BrasilLogo';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -162,6 +163,68 @@ export default function AdminDashboardPage() {
   // Estado geral de empresas
   const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(INITIAL_BUSINESSES.find(b => b.status === 'pending_review') || INITIAL_BUSINESSES[0]);
+  const [isLoadingQueue, setIsLoadingQueue] = useState(false);
+
+  // Sincronizar Fila de Triagem com o Banco de Dados PostgreSQL
+  const fetchTriageQueue = async () => {
+    if (!authSession?.token) return;
+    setIsLoadingQueue(true);
+    try {
+      const res = await fetch('/api/v1/triage/queue?limit=100', {
+        headers: {
+          Authorization: `Bearer ${authSession.token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.results && Array.isArray(data.results) && data.results.length > 0) {
+          const backendBusinesses: Business[] = data.results.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            slug: item.slug,
+            description: item.description || '',
+            listing_type: item.listing_type || 'service',
+            service_mode: item.service_mode || 'at_customer',
+            service_radius_km: item.service_radius_km || 20,
+            category_name: item.primary_category || 'Serviços',
+            category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
+            whatsapp: item.whatsapp,
+            phone: item.phone || '',
+            neighborhood: item.neighborhood,
+            city: item.city,
+            state: item.state,
+            show_full_address: false,
+            latitude: -22.9064,
+            longitude: -47.0592,
+            status: item.status,
+            is_verified: item.is_verified,
+            document_type: item.document_type || 'CNPJ',
+            document_number: item.document_number,
+            created_at: item.created_at,
+            accepted_manifesto: true,
+          }));
+
+          setBusinesses(backendBusinesses);
+          setSelectedBusiness((prev) => {
+            if (prev && backendBusinesses.some(b => b.id === prev.id)) {
+              return backendBusinesses.find(b => b.id === prev.id) || backendBusinesses[0];
+            }
+            return backendBusinesses.find(b => b.status === 'pending_review') || backendBusinesses[0];
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao sincronizar fila de triagem:', err);
+    } finally {
+      setIsLoadingQueue(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authSession?.token) {
+      fetchTriageQueue();
+    }
+  }, [authSession?.token]);
 
   // Filtros da fila de triagem
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -283,7 +346,7 @@ export default function AdminDashboardPage() {
   };
 
   // Aplicar decisão de triagem
-  const handleApplyDecision = (action: 'approve' | 'needs_info' | 'reject') => {
+  const handleApplyDecision = async (action: 'approve' | 'needs_info' | 'reject') => {
     if (!selectedBusiness) return;
 
     const oldStatus = selectedBusiness.status;
@@ -293,6 +356,32 @@ export default function AdminDashboardPage() {
       reject: 'rejected',
     };
     const targetStatus = newStatusMap[action];
+
+    // Se tiver UUID do PostgreSQL, salva na API /api/v1/triage/decision/{id}
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedBusiness.id);
+    if (isUuid && authSession?.token) {
+      try {
+        const actionPayloadMap: Record<string, string> = {
+          approve: 'approve',
+          needs_info: 'request_changes',
+          reject: 'reject',
+        };
+        await fetch(`/api/v1/triage/decision/${selectedBusiness.id}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authSession.token}`,
+          },
+          body: JSON.stringify({
+            action: actionPayloadMap[action],
+            note: decisionNote || (action === 'approve' ? 'Aprovado após checklist positivo.' : 'Ajustes solicitados.'),
+            is_verified: action === 'approve' ? grantVerifiedSeal : false,
+          }),
+        });
+      } catch (err) {
+        console.warn('Erro ao persistir decisão no banco:', err);
+      }
+    }
 
     // Atualiza empresa
     const updated = businesses.map((b) => {
@@ -425,9 +514,7 @@ export default function AdminDashboardPage() {
         <div className="w-full max-w-md bg-[#0d151c]/95 border border-[#182836] rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 backdrop-blur-xl">
           {/* Topo do Card de Login */}
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-amber-500/20 border border-emerald-500/30 flex items-center justify-center mb-3 text-emerald-400 shadow-lg shadow-emerald-950/50">
-              <ShieldCheck className="w-8 h-8 text-emerald-400" />
-            </div>
+            <BrasilLogo size={56} className="w-14 h-14 mb-3 border-amber-500/40" />
             <span className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/30 mb-2">
               Patriota Indica • Acesso Restrito
             </span>
@@ -533,9 +620,7 @@ export default function AdminDashboardPage() {
             </Link>
             <div className="h-5 w-[1px] bg-[#182836]" />
             <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-lg bg-emerald-950/80 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xs">
-                PI
-              </span>
+              <BrasilLogo size={28} className="w-7 h-7 !rounded-lg" />
               <div>
                 <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
                   Central de Curadoria & Triagem
@@ -685,9 +770,19 @@ export default function AdminDashboardPage() {
                     <Layers className="w-4 h-4 text-emerald-400" />
                     Empresas na Fila de Análise
                   </h2>
-                  <span className="text-xs text-slate-400 font-mono">
-                    {filteredQueue.length} registros
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={fetchTriageQueue}
+                      disabled={isLoadingQueue}
+                      title="Sincronizar fila com o banco de dados PostgreSQL"
+                      className="p-1.5 rounded-lg bg-[#070b0e] border border-[#182836] hover:border-emerald-500/50 text-slate-400 hover:text-emerald-300 transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingQueue ? 'animate-spin text-emerald-400' : ''}`} />
+                    </button>
+                    <span className="text-xs text-slate-400 font-mono">
+                      {filteredQueue.length} registros
+                    </span>
+                  </div>
                 </div>
 
                 {/* Filtro de Busca e Status */}

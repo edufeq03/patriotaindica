@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { BrasilLogo } from '@/components/BrasilLogo';
 import { 
   Search, 
   MapPin, 
@@ -32,7 +33,9 @@ import {
   Store, 
   FileText,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
 import { Business, Category, ListingType } from '@/lib/types';
@@ -112,6 +115,42 @@ export default function HomePage() {
     accepted_privacy: false,
   });
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
+  const [applicationSubmitting, setApplicationSubmitting] = useState(false);
+  const [applicationErrorMsg, setApplicationErrorMsg] = useState<string | null>(null);
+
+  // Sincronização inicial com o Backend (Categorias e Empresas da Base)
+  useEffect(() => {
+    let isMounted = true;
+    async function syncData() {
+      try {
+        const catRes = await fetch('/api/v1/categories');
+        if (catRes.ok) {
+          const data = await catRes.json();
+          if (isMounted && Array.isArray(data) && data.length > 0) {
+            setCategoriesList(data);
+          }
+        }
+      } catch (err) {
+        console.warn('Usando categorias locais:', err);
+      }
+
+      try {
+        const searchRes = await fetch('/api/v1/search?page=1&limit=50');
+        if (searchRes.ok) {
+          const data = await searchRes.json();
+          if (isMounted && data?.results && Array.isArray(data.results) && data.results.length > 0) {
+            setBusinesses(data.results);
+          }
+        }
+      } catch (err) {
+        console.warn('Usando catálogo local:', err);
+      }
+    }
+    syncData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Obter localização do GPS do usuário
   const handleGetLocation = () => {
@@ -187,58 +226,119 @@ export default function HomePage() {
       .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
   }, [businesses, userLocation, searchQuery, selectedCategory, selectedType, maxDistanceKm]);
 
-  // Submeter Candidatura (Canal C - "Quero ser indicado")
-  const handleSubmitApplication = (e: React.FormEvent) => {
+  // Submeter Candidatura Real (Canal C - "Quero ser indicado" -> PostgreSQL)
+  const handleSubmitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cat = categoriesList.find((c) => c.slug === applicationForm.category_slug);
+    setApplicationSubmitting(true);
+    setApplicationErrorMsg(null);
 
-    const newApp: Business = {
-      id: `app-${Date.now()}`,
-      name: applicationForm.name,
-      slug: `${applicationForm.name.toLowerCase().replace(/\s+/g, '-')}-campinas`,
-      description: applicationForm.description,
+    const cat = categoriesList.find((c) => c.slug === applicationForm.category_slug);
+    const isUuid = cat?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cat.id);
+
+    // Limpar documento: se vazio, envia null para não disparar validação de checksum
+    const rawDoc = applicationForm.document_number?.trim();
+    const cleanDoc = rawDoc ? rawDoc.replace(/\D/g, '') : null;
+    const docType = cleanDoc && cleanDoc.length === 11 ? 'CPF' : 'CNPJ';
+
+    const payload = {
+      name: applicationForm.name.trim(),
+      description: applicationForm.description.trim() || null,
       listing_type: 'service',
+      document_type: cleanDoc ? docType : 'CNPJ',
+      document_number: cleanDoc || null,
+      whatsapp: applicationForm.whatsapp.trim(),
+      neighborhood: applicationForm.neighborhood.trim(),
+      city: applicationForm.city.trim() || 'Campinas',
+      state: (applicationForm.state.trim() || 'SP').toUpperCase(),
       service_mode: applicationForm.service_mode,
-      service_radius_km: applicationForm.service_radius_km,
-      category_name: cat ? cat.name : 'Serviços',
-      category_slug: applicationForm.category_slug,
-      whatsapp: applicationForm.whatsapp,
-      neighborhood: applicationForm.neighborhood,
-      city: applicationForm.city,
-      state: applicationForm.state,
+      service_radius_km: applicationForm.service_radius_km || 20,
+      category_ids: isUuid && cat ? [cat.id] : [],
+      primary_category_id: isUuid && cat ? cat.id : null,
+      proposed_niche: (!isUuid && cat) ? cat.name : null,
       show_full_address: false,
-      latitude: userLocation.lat + (Math.random() - 0.5) * 0.02,
-      longitude: userLocation.lng + (Math.random() - 0.5) * 0.02,
-      status: 'pending_review',
-      is_verified: false,
-      document_type: 'CNPJ',
-      document_number: applicationForm.document_number,
-      created_at: new Date().toISOString(),
-      accepted_manifesto: applicationForm.accepted_manifesto,
-      accepted_manifesto_at: new Date().toISOString(),
-      manifesto_version: MANIFESTO_VERSION,
     };
 
-    setBusinesses((prev) => [newApp, ...prev]);
-    setApplicationSubmitted(true);
-    setTimeout(() => {
-      setApplicationSubmitted(false);
-      setShowApplicationModal(false);
-      setApplicationForm({
-        name: '',
-        category_slug: 'eletricista',
-        document_number: '',
-        whatsapp: '',
-        neighborhood: '',
-        city: 'Campinas',
-        state: 'SP',
-        service_mode: 'at_customer',
-        service_radius_km: 20,
-        description: '',
-        accepted_manifesto: false,
-        accepted_privacy: false,
+    try {
+      const res = await fetch('/api/v1/businesses/application', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
-    }, 2000);
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        let msg = 'Erro ao cadastrar empresa. Verifique os dados informados.';
+        if (data?.detail) {
+          if (typeof data.detail === 'string') {
+            msg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            msg = data.detail.map((err: any) => err.msg || err.message).join(' | ');
+          }
+        }
+        setApplicationErrorMsg(msg);
+        setApplicationSubmitting(false);
+        return;
+      }
+
+      // Sucesso na gravação no PostgreSQL
+      const createdId = data.business_id || `app-${Date.now()}`;
+      const newApp: Business = {
+        id: createdId,
+        name: applicationForm.name,
+        slug: `${applicationForm.name.toLowerCase().replace(/\s+/g, '-')}-campinas`,
+        description: applicationForm.description,
+        listing_type: 'service',
+        service_mode: applicationForm.service_mode,
+        service_radius_km: applicationForm.service_radius_km,
+        category_name: cat ? cat.name : 'Serviços',
+        category_slug: applicationForm.category_slug,
+        whatsapp: applicationForm.whatsapp,
+        neighborhood: applicationForm.neighborhood,
+        city: applicationForm.city,
+        state: applicationForm.state,
+        show_full_address: false,
+        latitude: userLocation.lat + (Math.random() - 0.5) * 0.02,
+        longitude: userLocation.lng + (Math.random() - 0.5) * 0.02,
+        status: 'pending_review',
+        is_verified: false,
+        document_type: docType,
+        document_number: cleanDoc || undefined,
+        created_at: new Date().toISOString(),
+        accepted_manifesto: applicationForm.accepted_manifesto,
+        accepted_manifesto_at: new Date().toISOString(),
+        manifesto_version: MANIFESTO_VERSION,
+      };
+
+      setBusinesses((prev) => [newApp, ...prev]);
+      setApplicationSubmitted(true);
+      setApplicationSubmitting(false);
+
+      setTimeout(() => {
+        setApplicationSubmitted(false);
+        setShowApplicationModal(false);
+        setApplicationForm({
+          name: '',
+          category_slug: 'eletricista',
+          document_number: '',
+          whatsapp: '',
+          neighborhood: '',
+          city: 'Campinas',
+          state: 'SP',
+          service_mode: 'at_customer',
+          service_radius_km: 20,
+          description: '',
+          accepted_manifesto: false,
+          accepted_privacy: false,
+        });
+      }, 3500);
+    } catch (err) {
+      console.error('Erro na submissão:', err);
+      setApplicationErrorMsg('Falha de conexão com o servidor. Verifique sua conexão e tente novamente.');
+      setApplicationSubmitting(false);
+    }
   };
 
   return (
@@ -248,12 +348,8 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2.5 font-bold text-lg tracking-tight text-white group">
-              {/* Brasão Estilizado (Verde, Azul e Ouro Solar) */}
-              <div className="relative w-9 h-9 rounded-xl bg-[#070b0e] border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-950/30 group-hover:border-amber-400 transition-colors">
-                <Shield className="w-5 h-5 text-emerald-400 fill-emerald-500/10" />
-                <span className="absolute w-2 h-2 rounded-full bg-blue-500 top-1.5 right-1.5" />
-                <span className="absolute w-2 h-2 rounded-full bg-amber-400 bottom-1.5 left-1.5 shadow-sm shadow-amber-400" />
-              </div>
+              {/* Bandeira Oficial do Brasil Estilizada (Mesma do Favicon) */}
+              <BrasilLogo size={36} className="w-9 h-9 group-hover:border-amber-400" />
               <div className="leading-tight">
                 <span className="text-white font-black tracking-tight text-lg">Patriota</span>
                 <span className="text-emerald-400 ml-1 font-black text-lg">Indica</span>
@@ -657,15 +753,28 @@ export default function HomePage() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="space-y-1">
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                Canal C: Candidatura Espontânea
-              </span>
-              <h2 className="text-xl font-bold text-white">Cadastre sua empresa para triagem</h2>
-              <p className="text-xs text-slate-400">
-                Somente empresas aprovadas em nossa análise cadastral e documental aparecem na plataforma.
-              </p>
+            <div className="flex items-start gap-3">
+              <BrasilLogo size={40} className="w-10 h-10 mt-1" />
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                  Canal C: Candidatura Espontânea
+                </span>
+                <h2 className="text-xl font-bold text-white">Cadastre sua empresa para triagem</h2>
+                <p className="text-xs text-slate-400">
+                  Somente empresas aprovadas em nossa análise cadastral e documental aparecem na plataforma.
+                </p>
+              </div>
             </div>
+
+            {applicationErrorMsg && (
+              <div className="p-3.5 rounded-xl bg-red-950/70 border border-red-500/60 text-red-200 text-xs flex items-start gap-2.5 shadow-lg animate-in fade-in">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-red-300">Atenção ao preencher:</p>
+                  <p className="text-slate-300 leading-relaxed">{applicationErrorMsg}</p>
+                </div>
+              </div>
+            )}
 
             {applicationSubmitted ? (
               <div className="p-6 rounded-xl bg-emerald-950/60 border border-emerald-800/60 text-center space-y-2">
@@ -842,9 +951,17 @@ export default function HomePage() {
 
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors shadow-lg shadow-emerald-950/60 border border-amber-400/40"
+                  disabled={applicationSubmitting}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold transition-all shadow-lg shadow-emerald-950/60 border border-amber-400/40 flex items-center justify-center gap-2"
                 >
-                  Enviar para Análise
+                  {applicationSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Gravando Candidatura no Sistema...</span>
+                    </>
+                  ) : (
+                    <span>Enviar para Análise</span>
+                  )}
                 </button>
               </form>
             )}
@@ -864,9 +981,7 @@ export default function HomePage() {
       <footer className="border-t border-[#182836] bg-[#070b0e] text-slate-400 text-xs py-8 mt-16">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded bg-emerald-950 border border-amber-500/50 text-amber-300 flex items-center justify-center font-bold text-[10px]">
-              PI
-            </span>
+            <BrasilLogo size={20} className="w-5 h-5 !rounded-md" />
             <span>© 2026 Patriota Indica. A rede de confiança da livre iniciativa e valores tradicionais.</span>
           </div>
           <div className="flex gap-4">
