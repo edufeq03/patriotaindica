@@ -94,7 +94,7 @@ export default function HomePage() {
     neighborhood: '',
     city: 'Campinas',
     state: 'SP',
-    service_mode: 'at_customer' as const,
+    service_mode: 'at_customer' as 'at_customer' | 'at_location' | 'both' | 'online',
     service_radius_km: 20,
     description: '',
     accepted_manifesto: false,
@@ -706,7 +706,7 @@ export default function HomePage() {
                       onChange={(e) =>
                         setApplicationForm({
                           ...applicationForm,
-                          service_mode: e.target.value as any,
+                          service_mode: e.target.value as 'at_customer' | 'at_location' | 'both' | 'online',
                         })
                       }
                       className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"

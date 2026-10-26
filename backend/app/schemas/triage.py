@@ -1,19 +1,20 @@
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 # Users & Auth
 class UserBase(BaseModel):
-    name: str
+    name: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
     role: str = "user"
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=8, max_length=100)
+
 
 
 class UserOut(UserBase):

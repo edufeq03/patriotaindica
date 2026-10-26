@@ -66,3 +66,27 @@ def test_business_application_schema():
     assert app.name == "Padaria Artesanal"
     assert app.state == "SP"
     assert app.document_type == "CNPJ"
+
+
+@pytest.mark.anyio
+async def test_admin_rbac_enforcement():
+    from backend.app.core.security import get_current_active_admin
+    from backend.app.models.user import User
+    from fastapi import HTTPException
+
+    # Usuário comum não pode acessar recursos de admin
+    regular_user = User(name="Comum", email="comum@teste.com", role="user", is_active=True)
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_active_admin(current_user=regular_user)
+    assert exc_info.value.status_code == 403
+
+    # Administrador deve passar normalmente
+    admin_user = User(name="Admin", email="admin@teste.com", role="admin", is_active=True)
+    result = await get_current_active_admin(current_user=admin_user)
+    assert result.role == "admin"
+
+
+def test_invalid_jwt_decoding():
+    assert decode_access_token("invalid.token.structure") is None
+    assert decode_access_token("") is None
+

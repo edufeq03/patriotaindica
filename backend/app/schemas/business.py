@@ -85,24 +85,25 @@ class BusinessDetail(BaseModel):
 
 
 class BusinessApplicationCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    document_type: Optional[str] = "CNPJ"  # 'CNPJ' ou 'CPF'
-    document_number: Optional[str] = None
-    whatsapp: str
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    instagram: Optional[str] = None
-    street: Optional[str] = None
-    number: Optional[str] = None
-    neighborhood: str
-    city: str
-    state: str = Field(..., max_length=2)
-    postal_code: Optional[str] = None
+    name: str = Field(..., min_length=2, max_length=150)
+    description: Optional[str] = Field(None, max_length=2000)
+    document_type: Optional[str] = Field("CNPJ", max_length=10)
+    document_number: Optional[str] = Field(None, max_length=20)
+    whatsapp: str = Field(..., min_length=8, max_length=20)
+    phone: Optional[str] = Field(None, max_length=20)
+    website: Optional[str] = Field(None, max_length=255)
+    instagram: Optional[str] = Field(None, max_length=100)
+    street: Optional[str] = Field(None, max_length=150)
+    number: Optional[str] = Field(None, max_length=30)
+    neighborhood: str = Field(..., min_length=1, max_length=100)
+    city: str = Field(..., min_length=2, max_length=100)
+    state: str = Field(..., min_length=2, max_length=2)
+    postal_code: Optional[str] = Field(None, max_length=10)
     show_full_address: bool = False
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    service_mode: str = "at_location"
-    service_radius_km: Optional[int] = None
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    service_mode: str = Field("at_location", max_length=20)
+    service_radius_km: Optional[int] = Field(None, ge=1, le=500)
     category_ids: List[UUID] = []
     primary_category_id: Optional[UUID] = None
+

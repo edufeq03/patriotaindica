@@ -2,7 +2,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Union
 from jose import jwt
 import bcrypt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.app.core.config import settings
+from backend.app.core.database import get_db
+from backend.app.models.user import User
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login",
+    auto_error=False,
+)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -53,3 +65,72 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return payload
     except Exception:
         return None
+
+
+async def get_current_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    Extrai e valida o token JWT do cabeçalho Authorization Bearer.
+    Localiza o usuário correspondente no banco de dados.
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autenticação necessária. Cabeçalho Authorization ausente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_access_token(token)
+    if not payload or "sub" not in payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token de acesso inválido ou expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = payload["sub"]
+    try:
+        from uuid import UUID
+        user_uuid = UUID(str(user_id))
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identificador de usuário inválido no token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    stmt = select(User).where(User.id == user_uuid)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário associado ao token não encontrado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Conta de usuário inativa.",
+        )
+
+    return user
+
+
+async def get_current_active_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Exige que o usuário autenticado possua estritamente o papel 'admin'.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado. Apenas administradores têm permissão para acessar este recurso.",
+        )
+    return current_user
+

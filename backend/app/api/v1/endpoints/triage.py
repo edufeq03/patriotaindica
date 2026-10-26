@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
+from backend.app.core.security import get_current_active_admin
 from backend.app.models.business import Business, BusinessCategory
 from backend.app.models.events import BusinessReviewLog
+from backend.app.models.user import User
 from backend.app.schemas.triage import TriageDecisionRequest
 
 router = APIRouter()
@@ -22,6 +24,7 @@ async def get_triage_queue(
     limit: int = Query(50, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
 ):
     """
     Retorna a fila de triagem e análise com filtros de status, cidade e canal de origem.
@@ -76,6 +79,7 @@ async def get_triage_queue(
 async def get_business_checklist(
     business_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
 ):
     """
     Checklist automatizado de triagem (Seção 3):
@@ -154,6 +158,7 @@ async def apply_triage_decision(
     business_id: UUID,
     payload: TriageDecisionRequest,
     db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
 ):
     """
     Aplica a decisão do analista na triagem:
@@ -188,12 +193,13 @@ async def apply_triage_decision(
 
     business.reviewed_at = func.now()
 
-    # Gravar log de auditoria
+    # Gravar log de auditoria com vínculo formal ao admin responsável
     log_entry = BusinessReviewLog(
         business_id=business.id,
         from_status=old_status,
         to_status=new_status,
         note=payload.note,
+        admin_id=current_admin.id,
     )
     db.add(log_entry)
     await db.commit()
@@ -204,4 +210,6 @@ async def apply_triage_decision(
         "from_status": old_status,
         "to_status": new_status,
         "is_verified": business.is_verified,
+        "admin_id": current_admin.id,
     }
+

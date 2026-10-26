@@ -7,6 +7,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.security import (
     create_access_token,
+    get_current_user,
     get_password_hash,
     verify_password,
 )
@@ -57,7 +58,8 @@ async def login(
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     """
-    Criação de usuário / gestor.
+    Criação pública de usuário / gestor.
+    SEGURANÇA: 'admin' NUNCA pode ser provisionado através deste endpoint público.
     """
     stmt = select(User).where(User.email == payload.email.lower().strip())
     exists = (await db.execute(stmt)).scalar_one_or_none()
@@ -67,14 +69,29 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
             detail="Já existe uma conta cadastrada com este e-mail.",
         )
 
+    # VULN-02 FIX: Cadastro público permite apenas 'user' ou 'owner'
+    assigned_role = "owner" if payload.role == "owner" else "user"
+
     new_user = User(
-        name=payload.name,
+        name=payload.name.strip(),
         email=payload.email.lower().strip(),
         password_hash=get_password_hash(payload.password),
-        phone=payload.phone,
-        role=payload.role if payload.role in ("admin", "owner", "user") else "user",
+        phone=payload.phone.strip() if payload.phone else None,
+        role=assigned_role,
     )
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
     return new_user
+
+
+@router.get("/me", response_model=UserOut)
+async def get_current_user_profile(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retorna os dados cadastrais do usuário autenticado via Bearer Token.
+    Permite ao frontend validar a sessão e verificar seu papel ('admin' ou 'owner').
+    """
+    return current_user
+
