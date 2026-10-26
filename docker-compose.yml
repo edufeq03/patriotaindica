@@ -33,8 +33,6 @@ services:
       - CORS_ORIGINS=["*"]
     expose:
       - "8000"
-    ports:
-      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -46,10 +44,10 @@ services:
     restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=/api/v1
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     expose:
       - "3000"
-    ports:
-      - "3000:3000"
     depends_on:
       - backend
 
