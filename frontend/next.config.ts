@@ -57,7 +57,7 @@ const nextConfig: NextConfig = {
 
   // C4: Rewrites / BFF para comunicação segura com o backend sem expor portas
   async rewrites() {
-    const backendUrl = process.env.INTERNAL_API_URL || "http://127.0.0.1:8000/api/v1";
+    const backendUrl = process.env.INTERNAL_API_URL || "http://backend:8000/api/v1";
     return [
       {
         source: "/api/v1/:path*",

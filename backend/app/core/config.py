@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://patriotaindica.com",
+        "https://www.patriotaindica.com",
+        "http://patriotaindica.com",
         "https://patriotaindica.com.br",
+        "https://www.patriotaindica.com.br",
     ]
 
     # Host whitelist
@@ -44,8 +48,13 @@ class Settings(BaseSettings):
         "localhost",
         "127.0.0.1",
         "testserver",
+        "backend",
+        "backend:8000",
+        "patriotaindica.com",
+        "*.patriotaindica.com",
         "patriotaindica.com.br",
         "*.patriotaindica.com.br",
+        "*",
     ]
 
     @field_validator("JWT_SECRET_KEY")
