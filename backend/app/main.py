@@ -61,6 +61,68 @@ os.makedirs(os.path.join(static_dir, "uploads"), exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
+@app.on_event("startup")
+async def apply_runtime_migrations():
+    """
+    Auto-migração de runtime: garante que colunas críticas das migrations 006 a 010
+    existam no PostgreSQL mesmo se o banco tiver sido iniciado com schema antigo.
+    """
+    from backend.app.core.database import AsyncSessionLocal
+    from sqlalchemy import text
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("""
+                DO $$ BEGIN
+                    ALTER TABLE businesses ALTER COLUMN location DROP NOT NULL;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+                ALTER TABLE businesses ADD COLUMN IF NOT EXISTS geocode_source VARCHAR(50);
+                ALTER TABLE businesses ADD COLUMN IF NOT EXISTS geocode_confidence FLOAT;
+
+                ALTER TABLE categories ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'approved';
+                ALTER TABLE categories ADD COLUMN IF NOT EXISTS proposed_by_business_id UUID REFERENCES businesses(id) ON DELETE SET NULL;
+
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+                CREATE TABLE IF NOT EXISTS category_aliases (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+                    alias_name VARCHAR(100) NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS business_pending_changes (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                    proposed_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    changes JSONB NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending_review',
+                    reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    reviewed_at TIMESTAMPTZ,
+                    rejection_reason TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS data_subject_requests (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    request_type VARCHAR(32) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    phone VARCHAR(32),
+                    details TEXT,
+                    status VARCHAR(32) NOT NULL DEFAULT 'received',
+                    ip_hash VARCHAR(64),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    resolved_at TIMESTAMPTZ
+                );
+            """))
+            await session.commit()
+            logger.info("Migrações automáticas de runtime aplicadas com sucesso.")
+    except Exception as e:
+        logger.warning("Aviso durante migrações de runtime: %s", e)
+
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {

@@ -56,6 +56,14 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   sparkles: <Sparkles className="w-4 h-4 text-amber-400" />,
 };
 
+function formatWhatsAppUrl(whatsapp?: string, name?: string): string {
+  if (!whatsapp) return '#';
+  const clean = whatsapp.replace(/\D/g, '');
+  const withDdi = clean.startsWith('55') ? clean : `55${clean}`;
+  const text = encodeURIComponent(`Olá! Vi seu anúncio no Patriota Indica e gostaria de solicitar informações/orçamento sobre ${name || 'seus serviços'}.`);
+  return `https://wa.me/${withDdi}?text=${text}`;
+}
+
 export default function HomePage() {
   // Estado de localização (Default: Centro de Campinas - SP)
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; label: string }>({
@@ -694,12 +702,15 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Footer do Card com CTA WhatsApp (Regra 4: /go/whatsapp/{id}) */}
+                {/* Footer do Card com CTA WhatsApp */}
                 <div className="p-5 pt-0 space-y-2">
                   <a
-                    href={`/go/whatsapp/${business.id}`}
+                    href={formatWhatsAppUrl(business.whatsapp, business.name)}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => {
+                      fetch(`/api/v1/go/whatsapp/${business.id}`, { keepalive: true }).catch(() => {});
+                    }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm shadow-md shadow-emerald-950/60 transition-all border border-amber-400/30"
                   >
                     <MessageCircle className="w-4 h-4 fill-current" />

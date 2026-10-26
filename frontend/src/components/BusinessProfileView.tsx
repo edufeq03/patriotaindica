@@ -188,9 +188,17 @@ export default function BusinessProfileView({ business, city, category, slug }: 
               {/* Botão de Contato Principal (Verde Esmeralda) */}
               <div className="w-full md:w-auto">
                 <a
-                  href={`/go/whatsapp/${business.id}`}
+                  href={(() => {
+                    const clean = (business.whatsapp || '').replace(/\D/g, '');
+                    const withDdi = clean.startsWith('55') ? clean : `55${clean}`;
+                    const text = encodeURIComponent(`Olá! Vi seu anúncio no Patriota Indica e gostaria de solicitar informações sobre ${business.name}.`);
+                    return clean ? `https://wa.me/${withDdi}?text=${text}` : `/go/whatsapp/${business.id}`;
+                  })()}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => {
+                    fetch(`/api/v1/go/whatsapp/${business.id}`, { keepalive: true }).catch(() => {});
+                  }}
                   className="w-full md:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-lg shadow-emerald-950/60 transition-all text-sm md:text-base border border-amber-400/30"
                 >
                   <MessageCircle className="w-5 h-5 fill-current" />

@@ -14,7 +14,7 @@ export async function GET(
   }
 
   // Encaminha requisição para o backend registrar a métrica no banco (contact_events)
-  const backendBase = process.env.INTERNAL_API_URL || 'http://127.0.0.1:8000/api/v1';
+  const backendBase = process.env.INTERNAL_API_URL || 'http://backend:8000/api/v1';
   try {
     const backendRes = await fetch(`${backendBase}/go/${type}/${id}`, {
       method: 'GET',

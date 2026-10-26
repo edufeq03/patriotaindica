@@ -1,3 +1,4 @@
+import logging
 import re
 import secrets
 import unicodedata
@@ -6,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +18,8 @@ from backend.app.models.category import Category
 from backend.app.models.events import BusinessReviewLog, Report
 from backend.app.schemas.business import BusinessApplicationCreate, BusinessDetail, ReportCreate
 from backend.app.services.geocoding import geocode_address
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -139,6 +143,11 @@ async def submit_business_application(
         number=payload.number,
     )
     location_geog = f"SRID=4326;POINT({lng} {lat})" if lat is not None and lng is not None else None
+    if location_geog is None:
+        # Fallback de segurança para coordenadas de referência para não violar constraint NOT NULL
+        location_geog = "SRID=4326;POINT(-47.0592 -22.9064)"
+        if not geo_source:
+            geo_source = "default_campinas"
 
     # Limpar documento
     doc_num = (
@@ -147,95 +156,126 @@ async def submit_business_application(
         else None
     )
 
-    new_business = Business(
-        name=payload.name.strip(),
-        slug=slug,
-        description=payload.description.strip() if payload.description else None,
-        listing_type=payload.listing_type,
-        document_type=payload.document_type or "CNPJ",
-        document_number=doc_num,
-        whatsapp=payload.whatsapp.strip(),
-        phone=payload.phone.strip() if payload.phone else None,
-        website=payload.website.strip() if payload.website else None,
-        instagram=payload.instagram.strip() if payload.instagram else None,
-        street=payload.street.strip() if payload.street else None,
-        number=payload.number.strip() if payload.number else None,
-        neighborhood=payload.neighborhood.strip(),
-        city=payload.city.strip(),
-        state=payload.state.upper().strip(),
-        postal_code=payload.postal_code.strip() if payload.postal_code else None,
-        show_full_address=payload.show_full_address,
-        location=location_geog,
-        geocode_source=geo_source,
-        geocode_confidence=geo_conf,
-        service_mode=payload.service_mode,
-        service_radius_km=payload.service_radius_km,
-        status="pending_review",
-        source="application",
-        is_verified=False,
-    )
+    # Prevenir duplicidade direta de CNPJ/CPF com mensagem amigável
+    if doc_num:
+        doc_stmt = select(Business.id).where(Business.document_number == doc_num)
+        existing_doc = (await db.execute(doc_stmt)).scalar_one_or_none()
+        if existing_doc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Este número de CNPJ/CPF já possui um cadastro ou candidatura em nosso sistema.",
+            )
 
-    db.add(new_business)
-    await db.flush()
-
-    # Vincular categorias existentes
-    for cat_id in payload.category_ids:
-        is_primary = (cat_id == payload.primary_category_id)
-        bc = BusinessCategory(
-            business_id=new_business.id,
-            category_id=cat_id,
-            is_primary=is_primary,
+    try:
+        new_business = Business(
+            name=payload.name.strip(),
+            slug=slug,
+            description=payload.description.strip() if payload.description else None,
+            listing_type=payload.listing_type,
+            document_type=payload.document_type or "CNPJ",
+            document_number=doc_num,
+            whatsapp=payload.whatsapp.strip(),
+            phone=payload.phone.strip() if payload.phone else None,
+            website=payload.website.strip() if payload.website else None,
+            instagram=payload.instagram.strip() if payload.instagram else None,
+            street=payload.street.strip() if payload.street else None,
+            number=payload.number.strip() if payload.number else None,
+            neighborhood=payload.neighborhood.strip(),
+            city=payload.city.strip(),
+            state=payload.state.upper().strip(),
+            postal_code=payload.postal_code.strip() if payload.postal_code else None,
+            show_full_address=payload.show_full_address,
+            location=location_geog,
+            geocode_source=geo_source,
+            geocode_confidence=geo_conf,
+            service_mode=payload.service_mode,
+            service_radius_km=payload.service_radius_km,
+            status="pending_review",
+            source="application",
+            is_verified=False,
         )
-        db.add(bc)
 
-    # Vincular ou propor novo nicho dinâmico (Sec. 4)
-    if payload.proposed_niche:
-        niche_name = payload.proposed_niche.strip()
-        cat_stmt = select(Category).where(Category.name.ilike(niche_name))
-        existing_cat = (await db.execute(cat_stmt)).scalar_one_or_none()
-        if existing_cat:
-            bc = BusinessCategory(
-                business_id=new_business.id,
-                category_id=existing_cat.id,
-                is_primary=True if not payload.category_ids else False,
-            )
-            db.add(bc)
-        else:
-            base_niche_slug = slugify(niche_name)
-            new_niche = Category(
-                name=niche_name,
-                slug=f"{base_niche_slug}-{secrets.token_hex(2)}",
-                kind=payload.listing_type,
-                status="pending",
-                icon_name="sparkles",
-                proposed_by_business_id=new_business.id,
-            )
-            db.add(new_niche)
-            await db.flush()
-            bc = BusinessCategory(
-                business_id=new_business.id,
-                category_id=new_niche.id,
-                is_primary=True if not payload.category_ids else False,
-            )
-            db.add(bc)
+        db.add(new_business)
+        await db.flush()
 
-    # Registrar log de auditoria
-    review_log = BusinessReviewLog(
-        business_id=new_business.id,
-        from_status=None,
-        to_status="pending_review",
-        note="Candidatura espontânea submetida via formulário público (Canal C). Aguardando triagem.",
-    )
-    db.add(review_log)
+        # Vincular categorias existentes com verificação de FK
+        for cat_id in payload.category_ids:
+            cat_check = (await db.execute(select(Category.id).where(Category.id == cat_id))).scalar_one_or_none()
+            if cat_check:
+                is_primary = (cat_id == payload.primary_category_id)
+                bc = BusinessCategory(
+                    business_id=new_business.id,
+                    category_id=cat_id,
+                    is_primary=is_primary,
+                )
+                db.add(bc)
 
-    await db.commit()
+        # Vincular ou propor novo nicho dinâmico (Sec. 4)
+        if payload.proposed_niche:
+            niche_name = payload.proposed_niche.strip()
+            cat_stmt = select(Category).where(Category.name.ilike(niche_name))
+            cat_results = (await db.execute(cat_stmt)).scalars().all()
+            if cat_results:
+                existing_cat = cat_results[0]
+                bc = BusinessCategory(
+                    business_id=new_business.id,
+                    category_id=existing_cat.id,
+                    is_primary=True if not payload.category_ids else False,
+                )
+                db.add(bc)
+            else:
+                base_niche_slug = slugify(niche_name)
+                new_niche = Category(
+                    name=niche_name,
+                    slug=f"{base_niche_slug}-{secrets.token_hex(2)}",
+                    kind=payload.listing_type,
+                    status="pending",
+                    icon_name="sparkles",
+                    proposed_by_business_id=new_business.id,
+                )
+                db.add(new_niche)
+                await db.flush()
+                bc = BusinessCategory(
+                    business_id=new_business.id,
+                    category_id=new_niche.id,
+                    is_primary=True if not payload.category_ids else False,
+                )
+                db.add(bc)
 
-    return {
-        "success": True,
-        "message": "Candidatura recebida com sucesso! Nossa equipe analisará os dados em até 48 horas.",
-        "business_id": new_business.id,
-        "status": "pending_review",
-    }
+        # Registrar log de auditoria
+        review_log = BusinessReviewLog(
+            business_id=new_business.id,
+            from_status=None,
+            to_status="pending_review",
+            note="Candidatura espontânea submetida via formulário público (Canal C). Aguardando triagem.",
+        )
+        db.add(review_log)
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "message": "Candidatura recebida com sucesso! Nossa equipe analisará os dados em até 48 horas.",
+            "business_id": new_business.id,
+            "status": "pending_review",
+        }
+    except HTTPException:
+        await db.rollback()
+        raise
+    except IntegrityError as ie:
+        await db.rollback()
+        logger.error("Erro de integridade ao salvar empresa: %s", ie, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não foi possível salvar o cadastro devido a um conflito de dados (CNPJ ou nome já existente).",
+        )
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Erro inesperado ao salvar candidatura: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Erro ao salvar candidatura no banco: {str(exc)}",
+        )
 
 
 @router.post("/{business_id}/report")
