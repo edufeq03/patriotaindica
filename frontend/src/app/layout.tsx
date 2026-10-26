@@ -13,6 +13,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: [
+      { url: '/icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
   title: "Patriota Indica | Negócios e Serviços da Livre Iniciativa",
   description: "Patriota Indica: O clube de negócios e guia local de empresas recomendadas que defendem a livre iniciativa, a família e os valores tradicionais.",
 };

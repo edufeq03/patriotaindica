@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#065f46" />
+      <stop offset="100%" stop-color="#022c22" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+  </defs>
+
+  <!-- Fundo Verde Esmeralda Squircle -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)" />
+
+  <!-- Losango Dourado da Bandeira -->
+  <polygon points="256,72 440,256 256,440 72,256" fill="url(#goldGrad)" />
+
+  <!-- Círculo Azul da Bandeira -->
+  <circle cx="256" cy="256" r="120" fill="url(#blueGrad)" />
+
+  <!-- Seta Sólida para a Direita ("Indica" + "Direita") -->
+  <path d="M180 256h135M265 195l60 61-60 61" stroke="#ffffff" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+</svg>
