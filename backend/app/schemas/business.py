@@ -1,14 +1,15 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from backend.app.core.validators import BRAZIL_STATES, INSTAGRAM_REGEX, validate_cnpj, validate_cpf
 from backend.app.schemas.category import CategoryOut
 
 
 class BusinessBase(BaseModel):
     name: str
     description: Optional[str] = None
-    listing_type: str = "service"  # 'service', 'product', 'both'
+    listing_type: Literal["service", "product", "both"] = "service"
 
     # Contatos
     whatsapp: str
@@ -24,10 +25,10 @@ class BusinessBase(BaseModel):
     state: str = Field(..., max_length=2)
     postal_code: Optional[str] = None
     show_full_address: bool = False
-    latitude: float
-    longitude: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
-    service_mode: str = "at_location"  # 'at_location', 'at_customer', 'both', 'online'
+    service_mode: Literal["at_location", "at_customer", "both", "online"] = "at_location"
     service_radius_km: Optional[int] = None
 
     logo_url: Optional[str] = None
@@ -35,6 +36,12 @@ class BusinessBase(BaseModel):
 
 
 class BusinessPublicCard(BaseModel):
+    """
+    Card público para listagem e busca.
+    SEGURANÇA (H6): Telefones e WhatsApp são ocultados dos cards e listagens
+    para impedir raspagem em massa (scraping). O contato é feito através de
+    interação com o link de redirecionamento seguro /go ou na página do perfil.
+    """
     id: UUID
     name: str
     slug: str
@@ -43,8 +50,6 @@ class BusinessPublicCard(BaseModel):
     service_mode: str
     service_radius_km: Optional[int] = None
     category_name: Optional[str] = None
-    whatsapp: str
-    phone: Optional[str] = None
     neighborhood: str
     city: str
     state: str
@@ -56,8 +61,13 @@ class BusinessPublicCard(BaseModel):
     is_verified: bool
     distance_km: Optional[float] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class BusinessDetail(BaseModel):
+    """
+    Perfil detalhado de visualização única da empresa.
+    """
     id: UUID
     name: str
     slug: str
@@ -65,7 +75,7 @@ class BusinessDetail(BaseModel):
     listing_type: str
     service_mode: str
     service_radius_km: Optional[int] = None
-    whatsapp: str
+    whatsapp: Optional[str] = None
     phone: Optional[str] = None
     website: Optional[str] = None
     instagram: Optional[str] = None
@@ -85,9 +95,19 @@ class BusinessDetail(BaseModel):
 
 
 class BusinessApplicationCreate(BaseModel):
+    """
+    Payload de candidatura pública.
+    SEGURANÇA (M3, H2):
+    - extra='forbid'
+    - Validação de UFs brasileiras
+    - Validação de formato de Instagram e CNPJ/CPF
+    - Limite de até 3 categorias por empresa
+    - Campo honeypot anti-bot
+    """
     name: str = Field(..., min_length=2, max_length=150)
     description: Optional[str] = Field(None, max_length=2000)
-    document_type: Optional[str] = Field("CNPJ", max_length=10)
+    listing_type: Literal["service", "product", "both"] = "service"
+    document_type: Optional[Literal["CNPJ", "CPF"]] = "CNPJ"
     document_number: Optional[str] = Field(None, max_length=20)
     whatsapp: str = Field(..., min_length=8, max_length=20)
     phone: Optional[str] = Field(None, max_length=20)
@@ -100,10 +120,81 @@ class BusinessApplicationCreate(BaseModel):
     state: str = Field(..., min_length=2, max_length=2)
     postal_code: Optional[str] = Field(None, max_length=10)
     show_full_address: bool = False
-    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
-    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
-    service_mode: str = Field("at_location", max_length=20)
+    service_mode: Literal["at_location", "at_customer", "both", "online"] = "at_location"
     service_radius_km: Optional[int] = Field(None, ge=1, le=500)
-    category_ids: List[UUID] = []
+    category_ids: List[UUID] = Field(default_factory=list, max_length=3)
     primary_category_id: Optional[UUID] = None
+    # Campo para propor novo nicho dinâmico (Sec. 4)
+    proposed_niche: Optional[str] = Field(None, max_length=60, description="Novo nicho proposto caso não exista nas categorias")
+    # Campo Honeypot anti-bot (se preenchido por bot, é rejeitado)
+    website_url_hp: Optional[str] = Field(None, description="Honeypot field")
 
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("proposed_niche")
+    @classmethod
+    def validate_niche(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        from backend.app.core.niche_validator import validate_and_normalize_niche_name
+        return validate_and_normalize_niche_name(v)
+
+    @field_validator("state")
+    @classmethod
+    def validate_state(cls, v: str) -> str:
+        uf = v.upper().strip()
+        if uf not in BRAZIL_STATES:
+            raise ValueError(f"Estado (UF) inválido: '{v}'. Use uma das 27 UFs do Brasil.")
+        return uf
+
+    @field_validator("instagram")
+    @classmethod
+    def validate_instagram_handle(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        clean = v.strip().lstrip("@")
+        if clean and not INSTAGRAM_REGEX.match(clean):
+            raise ValueError("Usuário do Instagram inválido. Use apenas letras, números, ponto e sublinhado.")
+        return clean
+
+    @field_validator("document_number")
+    @classmethod
+    def validate_document(cls, v: Optional[str], info) -> Optional[str]:
+        if not v:
+            return None
+        digits = "".join(filter(str.isdigit, v))
+        doc_type = info.data.get("document_type", "CNPJ")
+        if doc_type == "CPF":
+            if not validate_cpf(digits):
+                raise ValueError("Número de CPF com dígitos verificadores inválidos.")
+        elif doc_type == "CNPJ":
+            if not validate_cnpj(digits):
+                raise ValueError("Número de CNPJ com dígitos verificadores inválidos.")
+        return digits
+
+    @model_validator(mode="after")
+    def check_honeypot(self) -> "BusinessApplicationCreate":
+        if self.website_url_hp and self.website_url_hp.strip():
+            raise ValueError("Acesso não permitido (spam detectado).")
+        return self
+
+
+class ReportCreate(BaseModel):
+    """
+    Submissão de denúncia (H2).
+    - reason e details com limites
+    - Honeypot anti-bot
+    - extra='forbid'
+    """
+    reason: str = Field(..., min_length=3, max_length=100)
+    details: Optional[str] = Field(None, max_length=1000)
+    contact_email: Optional[EmailStr] = None
+    website_url_hp: Optional[str] = Field(None, description="Honeypot field")
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def check_honeypot(self) -> "ReportCreate":
+        if self.website_url_hp and self.website_url_hp.strip():
+            raise ValueError("Acesso não permitido (spam detectado).")
+        return self

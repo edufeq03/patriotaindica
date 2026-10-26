@@ -3,6 +3,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -46,7 +47,9 @@ class Business(Base):
     state = Column(String(2), nullable=False)
     postal_code = Column(String(10), nullable=True)
     show_full_address = Column(Boolean, nullable=False, default=False)
-    location = Column(Geography(geometry_type="POINT", srid=4326), nullable=False)
+    location = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    geocode_source = Column(String(50), nullable=True)
+    geocode_confidence = Column(Float, nullable=True)
     service_mode = Column(String(20), nullable=False, default="at_location")  # 'at_location', 'at_customer', 'both', 'online'
     service_radius_km = Column(Integer, nullable=True)
 

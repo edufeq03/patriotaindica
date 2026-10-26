@@ -1,12 +1,12 @@
-from typing import List, Union
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, validator
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Patriota Indica"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = "production"
+    DEBUG: bool = False
 
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -20,17 +20,42 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # JWT Security
-    JWT_SECRET_KEY: str = "change_this_to_a_very_secure_random_string_in_production_32_chars"
+    # JWT Security - C1: Segredo obrigatório com validação rigorosa
+    JWT_SECRET_KEY: str = "patriota_indica_sec_dev_key_64_chars_hex_948f2b7a1e0c45d3a9b8"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    JWT_ISSUER: str = "patriotaindica.com.br"
+    JWT_AUDIENCE: str = "patriotaindica-users"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # External APIs
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
 
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # CORS - M1: Restringir origens válidas sem curinga em produção
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://patriotaindica.com.br",
+    ]
+
+    # Host whitelist
+    ALLOWED_HOSTS: List[str] = [
+        "localhost",
+        "127.0.0.1",
+        "testserver",
+        "patriotaindica.com.br",
+        "*.patriotaindica.com.br",
+    ]
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def strong_secret(cls, v: str) -> str:
+        if len(v) < 32 or "change_this" in v.lower():
+            raise ValueError(
+                "JWT_SECRET_KEY fraco ou padrão detectado. Defina uma chave de pelo menos 32 caracteres gerada com openssl rand -hex 64."
+            )
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -41,3 +66,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

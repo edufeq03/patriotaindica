@@ -1,19 +1,32 @@
-import httpx
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_active_admin
 from backend.app.models.business import Business, BusinessCategory
+from backend.app.models.category import Category
 from backend.app.models.events import BusinessReviewLog
 from backend.app.models.user import User
 from backend.app.schemas.triage import TriageDecisionRequest
 
 router = APIRouter()
+
+# Máquina de Estados Válida para Triagem (Item M7 do Relatório)
+VALID_TRANSITIONS: Dict[str, set] = {
+    "pending_review": {"approved", "needs_info", "rejected"},
+    "needs_info": {"pending_review", "rejected", "approved"},
+    "approved": {"suspended"},
+    "suspended": {"approved", "archived"},
+    "rejected": set(),  # Registro rejeitado não pode ser diretamente reaprovado sem nova candidatura
+    "archived": set(),
+}
 
 
 @router.get("/queue")
@@ -52,6 +65,8 @@ async def get_triage_queue(
     items = []
     for b in businesses:
         primary_cat = next((bc.category.name for bc in b.categories if bc.is_primary), None)
+        pending_niches = [bc.category.name for bc in b.categories if bc.category and bc.category.status == "pending"]
+
         items.append({
             "id": b.id,
             "name": b.name,
@@ -66,6 +81,7 @@ async def get_triage_queue(
             "source": b.source,
             "is_verified": b.is_verified,
             "primary_category": primary_cat,
+            "pending_niches": pending_niches,
             "created_at": b.created_at,
         })
 
@@ -82,10 +98,10 @@ async def get_business_checklist(
     current_admin: User = Depends(get_current_active_admin),
 ):
     """
-    Checklist automatizado de triagem (Seção 3):
-    1. Consulta CNPJ no BrasilAPI
+    Checklist automatizado de triagem (Item M7):
+    1. Consulta CNPJ no BrasilAPI com cache de 24h
     2. Detecção de duplicidade (mesmo documento ou mesmo WhatsApp)
-    3. Status da geolocalização
+    3. Status da geolocalização e verificação de nichos
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -102,11 +118,26 @@ async def get_business_checklist(
         "cnpj_status": "not_checked",
         "duplicate_found": False,
         "duplicate_details": [],
-        "geolocation_status": "ok",
+        "geolocation_status": "ok" if business.location is not None else "pending_review",
+        "geocode_source": business.geocode_source,
     }
 
-    # 1. Consulta CNPJ BrasilAPI se document_number existir e for 14 dígitos
-    if business.document_number and len(business.document_number) == 14:
+    # 1. Consulta CNPJ com cache de 24h (M7)
+    now = datetime.now(timezone.utc)
+    is_cached = (
+        business.cnpj_checked_at is not None
+        and (now - business.cnpj_checked_at) < timedelta(hours=24)
+        and business.cnpj_situation is not None
+    )
+
+    if is_cached:
+        checklist["cnpj_status"] = "active" if "ATIVA" in business.cnpj_situation.upper() else "inactive"
+        checklist["cnpj_data"] = {
+            "situacao_cadastral": business.cnpj_situation,
+            "cached": True,
+            "last_check": business.cnpj_checked_at.isoformat(),
+        }
+    elif business.document_number and len(business.document_number) == 14:
         try:
             async with httpx.AsyncClient(timeout=6.0) as client:
                 res = await client.get(f"{settings.BRASILAPI_BASE_URL}/cnpj/v1/{business.document_number}")
@@ -120,18 +151,18 @@ async def get_business_checklist(
                         "cnae_fiscal_descricao": data.get("cnae_fiscal_descricao"),
                         "municipio": data.get("municipio"),
                         "uf": data.get("uf"),
+                        "cached": False,
                     }
                     checklist["cnpj_status"] = "active" if "ATIVA" in situacao.upper() else "inactive"
-                    # Atualizar na tabela business
                     business.cnpj_situation = situacao
-                    business.cnpj_checked_at = func.now()
+                    business.cnpj_checked_at = now
                     await db.commit()
                 else:
                     checklist["cnpj_status"] = "not_found"
         except Exception:
             checklist["cnpj_status"] = "api_error"
 
-    # 2. Verificação de Duplicidade (mesmo WhatsApp ou mesmo CNPJ em outro registro)
+    # 2. Verificação de Duplicidade
     dup_stmt = select(Business).where(
         Business.id != business.id,
         or_(
@@ -161,11 +192,11 @@ async def apply_triage_decision(
     current_admin: User = Depends(get_current_active_admin),
 ):
     """
-    Aplica a decisão do analista na triagem:
-    - 'approve': Aprova a empresa (passa a aparecer publicamente).
-    - 'request_changes': Coloca em 'needs_info' com o motivo.
-    - 'reject': Reprova com motivo gravado.
-    - 'suspend': Suspende a exibição pública.
+    Aplica a decisão do analista na triagem com Máquina de Estados Estrita (Item M7):
+    - Transições validadas
+    - Exige resolução prévia de nichos pendentes antes da aprovação
+    - reviewed_by e admin_id sempre preenchidos
+    - Exige justificativa formal se o CNPJ constar inativo
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -185,15 +216,50 @@ async def apply_triage_decision(
     if not new_status:
         raise HTTPException(status_code=400, detail="Ação de triagem inválida.")
 
+    # Validação da máquina de estados (M7)
+    allowed_transitions = VALID_TRANSITIONS.get(old_status, set())
+    if new_status not in allowed_transitions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Transição de status inválida: de '{old_status}' para '{new_status}'.",
+        )
+
+    # Regras específicas de aprovação (M7 & Sec 4)
+    if new_status == "approved":
+        # 1. Verificar se há nichos pendentes vinculados
+        pending_cats_stmt = (
+            select(Category.name)
+            .join(BusinessCategory, BusinessCategory.category_id == Category.id)
+            .where(
+                BusinessCategory.business_id == business.id,
+                Category.status == "pending",
+            )
+        )
+        pending_cats = (await db.execute(pending_cats_stmt)).scalars().all()
+        if pending_cats:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Não é possível aprovar a empresa. Os seguintes nichos propostos estão pendentes de moderação: {', '.join(pending_cats)}. Aprove ou mescle-os primeiro.",
+            )
+
+        # 2. Exigir justificativa se CNPJ estiver baixado/inativo
+        if business.cnpj_situation and any(x in business.cnpj_situation.upper() for x in ("BAIXADA", "INAPTA", "CANCELADA")):
+            if not payload.note or len(payload.note.strip()) < 10:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="CNPJ com situação cadastral inativa/baixada. Para aprovar com override, é obrigatório registrar justificativa detalhada (mínimo 10 caracteres).",
+                )
+
     business.status = new_status
+    business.reviewed_by = current_admin.id
+    business.reviewed_at = func.now()
+
     if payload.action == "reject":
         business.rejection_reason = payload.note
     if payload.is_verified is not None:
         business.is_verified = payload.is_verified
 
-    business.reviewed_at = func.now()
-
-    # Gravar log de auditoria com vínculo formal ao admin responsável
+    # Registrar log de auditoria append-only
     log_entry = BusinessReviewLog(
         business_id=business.id,
         from_status=old_status,
@@ -210,6 +276,5 @@ async def apply_triage_decision(
         "from_status": old_status,
         "to_status": new_status,
         "is_verified": business.is_verified,
-        "admin_id": current_admin.id,
+        "reviewed_by": current_admin.id,
     }
-

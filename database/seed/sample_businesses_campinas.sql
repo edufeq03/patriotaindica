@@ -2,20 +2,10 @@
 -- Seed: Sample Pilot Businesses (Campinas - SP)
 -- Description: Realistic seed data for testing proximity search,
 --              service radius (at_customer), and triage states.
+-- NOTE: Administradores DEVEM ser provisionados via script backend.scripts.create_admin
 -- ==============================================================================
 
--- 1. Usuário Administrador Inicial (senha demo: admin123)
--- Hash bcrypt para 'admin123'
-INSERT INTO users (id, name, email, password_hash, role)
-VALUES (
-  'a0000000-0000-0000-0000-000000000001',
-  'Administrador Curadoria',
-  'admin@mktdireita.com.br',
-  '$2b$12$e8YQZ0c1UaY5K7XzVl7tqu1N3eEsqtWnCUG5z5tKj2oQc1Wq3dZae',
-  'admin'
-) ON CONFLICT (email) DO NOTHING;
-
--- 2. Empresas Piloto em Campinas-SP
+-- 1. Empresas Piloto em Campinas-SP
 -- Coordenadas de referência no centro de Campinas: Lat -22.9056, Lng -47.0608
 
 -- Empresa 1: Eletricista Residencial (at_customer com raio de 25km)

@@ -74,8 +74,8 @@ export default function AdminDashboardPage() {
     return null;
   });
 
-  const [loginEmail, setLoginEmail] = useState('admin@patriotaindica.com.br');
-  const [loginPassword, setLoginPassword] = useState('admin123');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -84,7 +84,7 @@ export default function AdminDashboardPage() {
     setLoginLoading(true);
     setLoginError(null);
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
     try {
       const formData = new URLSearchParams();
@@ -102,7 +102,7 @@ export default function AdminDashboardPage() {
       if (res.ok) {
         const data = await res.json();
         if (data.user?.role !== 'admin') {
-          setLoginError('Acesso negado: apenas contas de administrador podem acessar a Central de Curadoria.');
+          setLoginError('Acesso negado: apenas contas de administrador têm permissão para acessar este portal.');
           setLoginLoading(false);
           return;
         }
@@ -113,39 +113,21 @@ export default function AdminDashboardPage() {
             email: data.user.email,
             role: data.user.role,
           },
-          isSandbox: false,
         };
         sessionStorage.setItem('patriotaindica_admin_session', JSON.stringify(session));
+        // Gravar cookie com SameSite para proteção e middleware SSR
+        document.cookie = `admin_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
         setAuthSession(session);
         setLoginLoading(false);
         return;
       } else {
         const errData = await res.json().catch(() => null);
-        setLoginError(errData?.detail || 'E-mail ou senha inválidos.');
+        setLoginError(errData?.detail || 'Credenciais inválidas. Verifique seu e-mail e senha.');
         setLoginLoading(false);
         return;
       }
     } catch {
-      // Backend offline: permitir demonstração sandbox segura com credenciais oficiais demo
-      if (
-        (loginEmail.includes('admin@patriotaindica.com.br') || loginEmail.includes('admin@mktdireita.com.br')) &&
-        loginPassword === 'admin123'
-      ) {
-        const sandboxSession = {
-          token: 'demo-local-jwt-sandbox-token',
-          user: {
-            name: 'Administrador Curadoria (Demo Sandbox)',
-            email: loginEmail,
-            role: 'admin',
-          },
-          isSandbox: true,
-        };
-        sessionStorage.setItem('patriotaindica_admin_session', JSON.stringify(sandboxSession));
-        setAuthSession(sandboxSession);
-        setLoginLoading(false);
-        return;
-      }
-      setLoginError('Não foi possível conectar à API de autenticação. Use as credenciais demo: admin@patriotaindica.com.br / admin123');
+      setLoginError('Não foi possível conectar ao servidor de autenticação. Verifique sua conexão ou status do backend.');
       setLoginLoading(false);
     }
   };
@@ -153,9 +135,11 @@ export default function AdminDashboardPage() {
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('patriotaindica_admin_session');
+      document.cookie = 'admin_session=; path=/; max-age=0; SameSite=Strict';
     }
     setAuthSession(null);
   };
+
 
   const [activeTab, setActiveTab] = useState<'triage' | 'assisted' | 'csv' | 'invitations' | 'categories' | 'metrics'>('triage');
 
@@ -516,25 +500,7 @@ export default function AdminDashboardPage() {
             </button>
           </form>
 
-          {/* Atalho Demo para Homologação */}
-          <div className="mt-5 pt-4 border-t border-[#182836] text-center">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginEmail('admin@patriotaindica.com.br');
-                setLoginPassword('admin123');
-              }}
-              className="text-[11px] text-amber-400/90 hover:text-amber-300 transition-colors flex items-center justify-center gap-1 mx-auto"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Preencher credenciais padrão de demonstração
-            </button>
-            <p className="text-[10px] text-slate-500 mt-1 font-mono">
-              admin@patriotaindica.com.br / admin123
-            </p>
-          </div>
-
-          <div className="mt-4 text-center">
+          <div className="mt-6 pt-4 border-t border-[#182836] text-center">
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
@@ -600,7 +566,7 @@ export default function AdminDashboardPage() {
                   {authSession?.user?.name || 'Administrador'}
                 </p>
                 <p className="text-[10px] text-slate-400 font-mono">
-                  {authSession?.isSandbox ? 'Sessão Sandbox' : 'JWT Autenticado'}
+                  JWT Autenticado
                 </p>
               </div>
 

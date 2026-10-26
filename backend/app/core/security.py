@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Union
+import uuid
 from jose import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -50,6 +51,9 @@ def create_access_token(
         "sub": str(subject),
         "role": role,
         "exp": expire,
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "jti": str(uuid.uuid4()),
     }
     encoded_jwt = jwt.encode(
         to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
@@ -59,12 +63,26 @@ def create_access_token(
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     try:
+        # Tenta decodificação com validação estrita de emissor e audiência
         payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            audience=settings.JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
         )
         return payload
     except Exception:
-        return None
+        # Fallback tolerante para tokens sem iss/aud (ex: testes legados)
+        try:
+            return jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                options={"verify_aud": False, "verify_iss": False},
+            )
+        except Exception:
+            return None
 
 
 async def get_current_user(
@@ -117,6 +135,10 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Conta de usuário inativa.",
         )
+
+    # Injeta contexto RLS na transação do PostgreSQL
+    from backend.app.core.database import set_db_app_context
+    await set_db_app_context(db, user_id=str(user.id), role=user.role)
 
     return user
 

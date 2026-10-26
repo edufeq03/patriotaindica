@@ -1,18 +1,28 @@
 import re
+import secrets
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from backend.app.core.database import get_db
+from backend.app.core.rate_limit import check_rate_limit, get_client_ip
 from backend.app.models.business import Business, BusinessCategory
 from backend.app.models.category import Category
 from backend.app.models.events import BusinessReviewLog, Report
-from backend.app.schemas.business import BusinessApplicationCreate, BusinessDetail
+from backend.app.schemas.business import BusinessApplicationCreate, BusinessDetail, ReportCreate
+from backend.app.services.geocoding import geocode_address
 
 router = APIRouter()
+
+RESERVED_SLUGS = {
+    "admin", "api", "go", "convite", "painel-empresa", "auth",
+    "search", "brasil", "curadoria", "termos", "privacidade", "login", "register"
+}
 
 
 def slugify(text: str) -> str:
@@ -85,29 +95,50 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
 @router.post("/application", status_code=status.HTTP_201_CREATED)
 async def submit_business_application(
     payload: BusinessApplicationCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Canal C: Candidatura pública ('Quero ser indicado').
-    REGRA INEGOCIÁVEL: NÃO publica nada diretamente.
-    Cria registro estritamente com status = 'pending_review' e source = 'application'.
+    SEGURANÇA:
+    - [H1] Rate limit por IP (3/dia).
+    - [H4] Coordenadas vindas do cliente são ignoradas. Geocodificação server-side
+           usando BrasilAPI/Nominatim para qualquer CEP/cidade do Brasil.
+    - [M6] Geração segura de slug com checagem de palavras reservadas e sufixo aleatório.
+    - REGRA INEGOCIÁVEL: Cria registro estritamente com status = 'pending_review' e source = 'application'.
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(
+        key=f"ratelimit:application:{client_ip}",
+        limit=3,
+        window_seconds=86400,
+        error_msg="Limite de 3 candidaturas por dia atingido para seu endereço IP.",
+    )
+
+    # Geração robusta de slug (M6)
     base_slug = slugify(f"{payload.name}-{payload.city}")
-    # Garantir unicidade de slug
+    if not base_slug or base_slug in RESERVED_SLUGS:
+        base_slug = f"empresa-{secrets.token_hex(3)}"
+
     slug = base_slug
-    counter = 1
-    while True:
+    attempts = 0
+    while attempts < 5:
         stmt = select(Business.id).where(Business.slug == slug)
         exists = (await db.execute(stmt)).scalar_one_or_none()
         if not exists:
             break
-        slug = f"{base_slug}-{counter}"
-        counter += 1
+        slug = f"{base_slug}-{secrets.token_hex(2)}"
+        attempts += 1
 
-    # Coordenadas padrão (fallback para centro da cidade se não informado)
-    lat = payload.latitude if payload.latitude is not None else -22.9056
-    lng = payload.longitude if payload.longitude is not None else -47.0608
-    location_geog = f"SRID=4326;POINT({lng} {lat})"
+    # Geocodificação server-side (H4 - suporte nacional)
+    lat, lng, geo_source, geo_conf = await geocode_address(
+        postal_code=payload.postal_code,
+        city=payload.city,
+        state=payload.state,
+        street=payload.street,
+        number=payload.number,
+    )
+    location_geog = f"SRID=4326;POINT({lng} {lat})" if lat is not None and lng is not None else None
 
     # Limpar documento
     doc_num = (
@@ -120,7 +151,7 @@ async def submit_business_application(
         name=payload.name.strip(),
         slug=slug,
         description=payload.description.strip() if payload.description else None,
-        listing_type="service",
+        listing_type=payload.listing_type,
         document_type=payload.document_type or "CNPJ",
         document_number=doc_num,
         whatsapp=payload.whatsapp.strip(),
@@ -135,6 +166,8 @@ async def submit_business_application(
         postal_code=payload.postal_code.strip() if payload.postal_code else None,
         show_full_address=payload.show_full_address,
         location=location_geog,
+        geocode_source=geo_source,
+        geocode_confidence=geo_conf,
         service_mode=payload.service_mode,
         service_radius_km=payload.service_radius_km,
         status="pending_review",
@@ -145,7 +178,7 @@ async def submit_business_application(
     db.add(new_business)
     await db.flush()
 
-    # Vincular categorias
+    # Vincular categorias existentes
     for cat_id in payload.category_ids:
         is_primary = (cat_id == payload.primary_category_id)
         bc = BusinessCategory(
@@ -154,6 +187,37 @@ async def submit_business_application(
             is_primary=is_primary,
         )
         db.add(bc)
+
+    # Vincular ou propor novo nicho dinâmico (Sec. 4)
+    if payload.proposed_niche:
+        niche_name = payload.proposed_niche.strip()
+        cat_stmt = select(Category).where(Category.name.ilike(niche_name))
+        existing_cat = (await db.execute(cat_stmt)).scalar_one_or_none()
+        if existing_cat:
+            bc = BusinessCategory(
+                business_id=new_business.id,
+                category_id=existing_cat.id,
+                is_primary=True if not payload.category_ids else False,
+            )
+            db.add(bc)
+        else:
+            base_niche_slug = slugify(niche_name)
+            new_niche = Category(
+                name=niche_name,
+                slug=f"{base_niche_slug}-{secrets.token_hex(2)}",
+                kind=payload.listing_type,
+                status="pending",
+                icon_name="sparkles",
+                proposed_by_business_id=new_business.id,
+            )
+            db.add(new_niche)
+            await db.flush()
+            bc = BusinessCategory(
+                business_id=new_business.id,
+                category_id=new_niche.id,
+                is_primary=True if not payload.category_ids else False,
+            )
+            db.add(bc)
 
     # Registrar log de auditoria
     review_log = BusinessReviewLog(
@@ -177,14 +241,33 @@ async def submit_business_application(
 @router.post("/{business_id}/report")
 async def report_business(
     business_id: UUID,
-    reason: str,
-    details: Optional[str] = None,
-    contact_email: Optional[str] = None,
+    payload: ReportCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Submissão de denúncia por consumidor sobre dados falsos, golpe ou infração.
+    SEGURANÇA:
+    - [H1] Rate limit por IP (5/dia).
+    - [H2] Deduplicação por IP + empresa em 24h.
+    - [H2] Nunca suspende automaticamente a empresa denunciada (apenas alerta a moderação).
     """
+    client_ip = get_client_ip(request)
+    await check_rate_limit(
+        key=f"ratelimit:report:{client_ip}",
+        limit=5,
+        window_seconds=86400,
+        error_msg="Limite diário de denúncias excedido para seu endereço IP.",
+    )
+
+    # Deduplicação por IP e empresa (evitar flood contra um mesmo negócio)
+    await check_rate_limit(
+        key=f"ratelimit:report_business:{client_ip}:{business_id}",
+        limit=1,
+        window_seconds=86400,
+        error_msg="Você já enviou uma denúncia para esta empresa nas últimas 24 horas.",
+    )
+
     stmt = select(Business.id).where(Business.id == business_id)
     exists = (await db.execute(stmt)).scalar_one_or_none()
     if not exists:
@@ -192,12 +275,12 @@ async def report_business(
 
     report = Report(
         business_id=business_id,
-        reason=reason,
-        details=details,
-        contact_email=contact_email,
+        reason=payload.reason.strip(),
+        details=payload.details.strip() if payload.details else None,
+        contact_email=str(payload.contact_email).strip() if payload.contact_email else None,
         status="pending",
     )
     db.add(report)
     await db.commit()
 
-    return {"success": True, "message": "Denúncia registrada. Agradecemos sua colaboração."}
+    return {"success": True, "message": "Denúncia registrada para análise da curadoria. Agradecemos sua colaboração."}

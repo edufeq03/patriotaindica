@@ -90,3 +90,201 @@ def test_invalid_jwt_decoding():
     assert decode_access_token("invalid.token.structure") is None
     assert decode_access_token("") is None
 
+
+def test_weak_jwt_secret_rejected():
+    from backend.app.core.config import Settings
+    with pytest.raises(ValueError):
+        Settings(JWT_SECRET_KEY="change_this_is_too_insecure_default_value_here")
+    with pytest.raises(ValueError):
+        Settings(JWT_SECRET_KEY="short_key_123")
+
+
+@pytest.mark.anyio
+async def test_otp_security_service():
+    from backend.app.services.otp import OTPService, WhatsAppProvider
+
+    class MockProvider(WhatsAppProvider):
+        def __init__(self):
+            self.last_code = None
+
+        async def send_otp(self, phone: str, code: str, business_name: str) -> bool:
+            self.last_code = code
+            return True
+
+    mock_provider = MockProvider()
+    service = OTPService(provider=mock_provider)
+    biz_id = "test-business-uuid-123"
+
+    # 1. Solicitar OTP
+    ok, msg = await service.request_otp(biz_id, "19999998888", "Empresa Teste")
+    assert ok is True
+    assert mock_provider.last_code is not None
+
+    # O código bruto não pode estar gravado em texto claro no cache
+    record = service._cache.get(f"claim:{biz_id}")
+    assert record is not None
+    assert mock_provider.last_code != record["hash"]
+
+    # 2. Tentativa incorreta
+    valid, err_msg = service.verify_otp(biz_id, "000000")
+    assert valid is False
+    assert "tentativa" in err_msg.lower()
+
+    # 3. Código correto
+    valid, success_msg = service.verify_otp(biz_id, mock_provider.last_code)
+    assert valid is True
+
+    # 4. Código consumido (uso único)
+    valid_again, _ = service.verify_otp(biz_id, mock_provider.last_code)
+    assert valid_again is False
+
+
+@pytest.mark.anyio
+async def test_rate_limit_enforcement():
+    from backend.app.core.rate_limit import check_rate_limit
+    from fastapi import HTTPException
+
+    test_key = "test:ratelimit:unique_key_123"
+    # Limite de 2 requisições por segundo
+    await check_rate_limit(test_key, limit=2, window_seconds=10)
+    await check_rate_limit(test_key, limit=2, window_seconds=10)
+
+    # A terceira deve falhar com 429
+    with pytest.raises(HTTPException) as exc_info:
+        await check_rate_limit(test_key, limit=2, window_seconds=10)
+    assert exc_info.value.status_code == 429
+
+
+def test_validate_external_url_security():
+    from backend.app.api.v1.endpoints.redirects import validate_external_url
+    from fastapi import HTTPException
+
+    # URLs seguras
+    assert validate_external_url("https://minhaempresa.com.br") == "https://minhaempresa.com.br"
+    assert validate_external_url("blog.patriota.com") == "https://blog.patriota.com"
+
+    # SSRF / Localhost / IPs privados bloqueados (H5)
+    with pytest.raises(HTTPException):
+        validate_external_url("http://localhost/admin")
+    with pytest.raises(HTTPException):
+        validate_external_url("http://127.0.0.1:8000")
+    with pytest.raises(HTTPException):
+        validate_external_url("http://192.168.1.100")
+    with pytest.raises(HTTPException):
+        validate_external_url("http://10.0.0.1")
+    with pytest.raises(HTTPException):
+        validate_external_url("http://user:secretpassword@empresa.com.br")
+    with pytest.raises(HTTPException):
+        validate_external_url("ftp://empresa.com.br")
+
+
+def test_brazilian_validators():
+    from backend.app.core.validators import validate_cpf, validate_cnpj, BRAZIL_STATES
+
+    # UFs
+    assert "SP" in BRAZIL_STATES
+    assert "PR" in BRAZIL_STATES
+    assert "XX" not in BRAZIL_STATES
+
+    # CPF
+    assert validate_cpf("11111111111") is False  # Sequência idêntica
+    assert validate_cpf("12345678900") is False  # Dígito falso
+    assert validate_cpf("52998224725") is True   # CPF matematicamente válido
+
+    # CNPJ
+    assert validate_cnpj("00000000000000") is False
+    assert validate_cnpj("11222333000181") is True   # CNPJ matematicamente válido
+    assert validate_cnpj("11222333000199") is False  # Dígito falso
+
+
+def test_business_application_validation_hardening():
+    from backend.app.schemas.business import BusinessApplicationCreate, ReportCreate
+    from pydantic import ValidationError
+
+    # UF inválida
+    with pytest.raises(ValidationError):
+        BusinessApplicationCreate(
+            name="Loja Teste",
+            whatsapp="11999998888",
+            neighborhood="Centro",
+            city="Curitiba",
+            state="INVALID",
+        )
+
+    # Honeypot preenchido (Anti-bot H2)
+    with pytest.raises(ValidationError):
+        BusinessApplicationCreate(
+            name="Loja Teste",
+            whatsapp="11999998888",
+            neighborhood="Centro",
+            city="Curitiba",
+            state="PR",
+            website_url_hp="http://spam-bot-link.com",
+        )
+
+    # Report com honeypot
+    with pytest.raises(ValidationError):
+        ReportCreate(
+            reason="Fraude",
+            website_url_hp="http://spam.com",
+        )
+
+
+@pytest.mark.anyio
+async def test_server_geocoding_does_not_fake_campinas():
+    from backend.app.services.geocoding import geocode_address
+
+    # Endereço inexistente não deve nunca fingir que é centro de Campinas
+    lat, lng, source, conf = await geocode_address(
+        postal_code="00000000",
+        city="Cidade Inexistente",
+        state="XX",
+    )
+    # Não deve ter retornado o centro fixo de Campinas (-22.9056, -47.0608)
+    assert lat != -22.9056
+    assert lng != -47.0608
+    assert source == "unresolved"
+    assert conf == 0.0
+
+
+def test_niche_validator_rules():
+    from backend.app.core.niche_validator import validate_and_normalize_niche_name
+
+    # Válidos (Sec. 4.2)
+    assert validate_and_normalize_niche_name("Cuidador de Iguanas Selvagens") == "Cuidador de Iguanas Selvagens"
+    assert validate_and_normalize_niche_name("Energia Solar Off-Grid & Baterias") == "Energia Solar Off-Grid & Baterias"
+    assert validate_and_normalize_niche_name("Pães & Doces Artesanais") == "Pães & Doces Artesanais"
+
+    # Inválidos (Sec. 4.2)
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("Ab")  # < 3 caracteres
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("A" * 65)  # > 60 caracteres
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("Eletricistaaaaa")  # repetição abusiva
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("123456")  # só números
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("Cuidador de Iguana http://golpe.com")  # URL
+    with pytest.raises(ValueError):
+        validate_and_normalize_niche_name("Ligue 19999998888")  # telefone
+    with pytest.raises(ValueError):
+        # Homógrafo cirílico (letra 'а' cirílica imitada)
+        validate_and_normalize_niche_name("Advog\u0430do")
+
+
+def test_triage_state_machine_rules():
+    from backend.app.api.v1.endpoints.triage import VALID_TRANSITIONS
+
+    # Transições legais
+    assert "approved" in VALID_TRANSITIONS["pending_review"]
+    assert "needs_info" in VALID_TRANSITIONS["pending_review"]
+    assert "rejected" in VALID_TRANSITIONS["pending_review"]
+    assert "suspended" in VALID_TRANSITIONS["approved"]
+    assert "approved" in VALID_TRANSITIONS["suspended"]
+
+    # Transições proibidas (M7)
+    assert "approved" not in VALID_TRANSITIONS["rejected"]  # Não pode reaprovar direto
+    assert "approved" not in VALID_TRANSITIONS["archived"]
+
+

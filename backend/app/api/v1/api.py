@@ -3,6 +3,7 @@ from backend.app.api.v1.endpoints import (
     auth,
     businesses,
     categories,
+    claim,
     redirects,
     search,
     triage,
@@ -16,3 +17,5 @@ api_router.include_router(businesses.router, prefix="/businesses", tags=["Empres
 api_router.include_router(redirects.router, prefix="/go", tags=["Rastreamento de Cliques"])
 api_router.include_router(triage.router, prefix="/triage", tags=["Triagem & Curadoria"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Autenticação"])
+api_router.include_router(claim.router, prefix="/claim", tags=["Reivindicação & OTP"])
+

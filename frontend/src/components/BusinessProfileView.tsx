@@ -42,36 +42,66 @@ export default function BusinessProfileView({ business, city, category, slug }: 
   // Modal da Carta de Princípios
   const [showManifestoModal, setShowManifestoModal] = useState(false);
 
-  // Estado do Modal de Reivindicação (Canal D com OTP)
-  const [showClaimModal, setShowClaimModal] = useState(false);
-  const [claimStep, setClaimStep] = useState<'confirm' | 'otp' | 'success'>('confirm');
-  const [otpCode, setOtpCode] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('839210');
-  const [otpError, setOtpError] = useState(false);
-
   // Modal de Denúncia
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportReason, setReportReason] = useState('Desvio dos princípios éticos');
+  const [reportReason, setReportReason] = useState('Violação da Carta de Princípios');
   const [reportDetails, setReportDetails] = useState('');
   const [reportSuccess, setReportSuccess] = useState(false);
 
-  // Disparar envio de código OTP
-  const handleSendOtp = () => {
-    const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(randomCode);
-    setClaimStep('otp');
-    setOtpError(false);
-  };
+  // Estado do Modal de Reivindicação (Canal D com OTP 100% server-side - C4)
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [claimStep, setClaimStep] = useState<'confirm' | 'otp' | 'success'>('confirm');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [maskedPhone, setMaskedPhone] = useState('');
 
-  // Validar código OTP
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (otpCode.trim() === generatedOtp || otpCode.trim() === '123456') {
-      setClaimStep('success');
-    } else {
-      setOtpError(true);
+  // Disparar envio de código OTP no servidor
+  const handleSendOtp = async () => {
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      const res = await fetch(`/api/v1/claim/${business.id}/request-otp`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setMaskedPhone(data?.masked_phone || '');
+        setClaimStep('otp');
+      } else {
+        setOtpError(data?.detail || 'Falha ao solicitar código de confirmação.');
+      }
+    } catch {
+      setOtpError('Não foi possível conectar ao servidor para envio do código.');
+    } finally {
+      setOtpLoading(false);
     }
   };
+
+  // Validar código OTP no servidor
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOtpLoading(true);
+    setOtpError(null);
+    try {
+      const res = await fetch(`/api/v1/claim/${business.id}/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: otpCode.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setClaimStep('success');
+      } else {
+        setOtpError(data?.detail || 'Código de confirmação incorreto.');
+      }
+    } catch {
+      setOtpError('Erro ao validar código. Tente novamente.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
 
   return (
     <div className="min-h-screen bg-[#070b0e] text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-black">
@@ -272,7 +302,7 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                   <a
                     href={`/go/website/${business.id}`}
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel="nofollow noopener noreferrer ugc"
                     className="flex items-center justify-between p-3 rounded-xl bg-[#070b0e] border border-[#182836] hover:bg-[#121e29] text-slate-300 transition-colors text-sm font-medium"
                   >
                     <span className="flex items-center gap-2">
@@ -287,7 +317,7 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                   <a
                     href={`https://instagram.com/${business.instagram}`}
                     target="_blank"
-                    rel="noopener noreferrer"
+                    rel="nofollow noopener noreferrer ugc"
                     className="flex items-center justify-between p-3 rounded-xl bg-[#070b0e] border border-[#182836] hover:bg-[#121e29] text-slate-300 transition-colors text-sm font-medium"
                   >
                     <span className="flex items-center gap-2">
@@ -373,28 +403,33 @@ export default function BusinessProfileView({ business, city, category, slug }: 
 
                 <button
                   onClick={handleSendOtp}
-                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold transition-colors shadow-lg shadow-amber-950/40 flex items-center justify-center gap-2"
+                  disabled={otpLoading}
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-extrabold transition-colors shadow-lg shadow-amber-950/40 flex items-center justify-center gap-2"
                 >
                   <MessageCircle className="w-4 h-4 fill-black" />
-                  Enviar Código OTP para este WhatsApp
+                  {otpLoading ? 'Enviando código via WhatsApp...' : 'Enviar Código OTP para este WhatsApp'}
                 </button>
+                {otpError && (
+                  <p className="text-red-400 text-[11px] text-center mt-2">{otpError}</p>
+                )}
               </div>
             )}
 
             {/* Passo 2: Digitar Código OTP */}
             {claimStep === 'otp' && (
               <form onSubmit={handleVerifyOtp} className="space-y-4 text-xs">
-                {/* Simulação amigável do envio */}
-                <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 space-y-1">
+                {/* Feedback de envio server-side seguro */}
+                <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Código OTP Gerado (Simulação de Envio):</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Código de Confirmação Enviado com Sucesso</span>
                   </div>
-                  <p className="font-mono text-base tracking-widest text-white font-bold bg-[#070b0e] p-2 rounded text-center border border-amber-500/30">
-                    {generatedOtp}
+                  <p className="text-xs text-slate-200">
+                    O código de 6 dígitos foi enviado para o WhatsApp cadastrado:{' '}
+                    <strong>{maskedPhone || 'Número cadastrado'}</strong>.
                   </p>
-                  <p className="text-[10px] text-amber-400/80">
-                    Em produção real, este código chega via mensagem de WhatsApp para o dono.
+                  <p className="text-[10px] text-slate-400">
+                    Validade de 5 minutos. Limite de até 5 tentativas de validação.
                   </p>
                 </div>
 
@@ -412,15 +447,16 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                     className="w-full px-4 py-3 bg-[#070b0e] border border-[#182836] rounded-xl text-center text-lg font-mono text-white tracking-widest focus:border-amber-500 outline-none"
                   />
                   {otpError && (
-                    <p className="text-red-400 text-[11px] mt-1">Código incorreto. Tente novamente.</p>
+                    <p className="text-red-400 text-[11px] mt-1">{otpError}</p>
                   )}
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors shadow-lg shadow-emerald-950/60"
+                  disabled={otpLoading || otpCode.trim().length !== 6}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold transition-colors shadow-lg shadow-emerald-950/60"
                 >
-                  Validar Código & Assumir Gestão
+                  {otpLoading ? 'Validando no servidor...' : 'Validar Código & Assumir Gestão'}
                 </button>
               </form>
             )}
@@ -501,11 +537,22 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                 </div>
 
                 <button
-                  onClick={() => {
+                  onClick={async () => {
+                    try {
+                      await fetch(`/api/v1/businesses/${business.id}/report`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          reason: reportReason,
+                          details: reportDetails,
+                        }),
+                      });
+                    } catch {}
                     setReportSuccess(true);
                     setTimeout(() => {
                       setReportSuccess(false);
                       setShowReportModal(false);
+                      setReportDetails('');
                     }, 2000);
                   }}
                   className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-colors shadow-md"

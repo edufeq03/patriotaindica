@@ -12,8 +12,12 @@ class UserBase(BaseModel):
     role: str = "user"
 
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, max_length=100)
+class UserCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=150)
+    email: EmailStr
+    phone: Optional[str] = Field(None, max_length=20)
+    password: str = Field(..., min_length=12, max_length=100)
+    model_config = ConfigDict(extra="forbid")
 
 
 
