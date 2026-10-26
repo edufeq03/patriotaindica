@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { 
   Search, 
@@ -18,19 +18,21 @@ import {
   Utensils, 
   Car, 
   Hammer, 
-  PawPrint,
-  Flower2,
-  Building2,
-  SlidersHorizontal,
-  PlusCircle,
-  X,
-  Clock,
-  ArrowRight,
-  Shield,
-  Star,
-  Award,
-  Store,
-  FileText
+  PawPrint, 
+  Flower2, 
+  Building2, 
+  SlidersHorizontal, 
+  PlusCircle, 
+  X, 
+  Clock, 
+  ArrowRight, 
+  Shield, 
+  Star, 
+  Award, 
+  Store, 
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
 import { Business, Category, ListingType } from '@/lib/types';
@@ -67,6 +69,15 @@ export default function HomePage() {
   const [selectedType, setSelectedType] = useState<ListingType | 'all'>('all');
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(50);
 
+  // Ref e função para rolagem horizontal das categorias
+  const categoriesRef = useRef<HTMLDivElement>(null);
+  const scrollCategories = (direction: 'left' | 'right') => {
+    if (categoriesRef.current) {
+      const scrollAmount = direction === 'left' ? -280 : 280;
+      categoriesRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
+
   // Categorias dinâmicas sincronizadas com o Admin
   const [categoriesList, setCategoriesList] = useState<Category[]>(() => {
     if (typeof window !== 'undefined') {
@@ -98,6 +109,7 @@ export default function HomePage() {
     service_radius_km: 20,
     description: '',
     accepted_manifesto: false,
+    accepted_privacy: false,
   });
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
 
@@ -224,6 +236,7 @@ export default function HomePage() {
         service_radius_km: 20,
         description: '',
         accepted_manifesto: false,
+        accepted_privacy: false,
       });
     }, 2000);
   };
@@ -412,32 +425,63 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Categorias em Pílulas */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none max-w-4xl mx-auto pt-2">
+          {/* Categorias em Pílulas com Navegação e Rolagem Horizontal */}
+          <div className="relative max-w-4xl mx-auto pt-2 flex items-center gap-1.5">
             <button
-              onClick={() => setSelectedCategory(null)}
-              className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
-                selectedCategory === null
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/60 border border-amber-400/30'
-                  : 'bg-[#0d151c] hover:bg-[#121e29] border border-[#182836] text-slate-300 hover:text-white'
-              }`}
+              type="button"
+              onClick={() => scrollCategories('left')}
+              className="shrink-0 p-2 rounded-xl bg-[#0d151c]/90 hover:bg-[#182836] border border-[#182836] hover:border-amber-500/50 text-slate-300 hover:text-white transition-all shadow-md"
+              title="Rolar categorias para a esquerda"
+              aria-label="Rolar para a esquerda"
             >
-              Todas as categorias
+              <ChevronLeft className="w-4 h-4 text-amber-400" />
             </button>
-            {categoriesList.map((cat) => (
+
+            <div
+              ref={categoriesRef}
+              onWheel={(e) => {
+                if (categoriesRef.current) {
+                  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+                  categoriesRef.current.scrollLeft += e.deltaY;
+                }
+              }}
+              className="flex items-center gap-2 overflow-x-auto pb-1.5 scroll-smooth no-scrollbar flex-1 touch-pan-x"
+            >
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(selectedCategory === cat.slug ? null : cat.slug)}
-                className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
-                  selectedCategory === cat.slug
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/60 font-semibold border border-amber-400/30'
+                onClick={() => setSelectedCategory(null)}
+                className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  selectedCategory === null
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/60 border border-amber-400/30'
                     : 'bg-[#0d151c] hover:bg-[#121e29] border border-[#182836] text-slate-300 hover:text-white'
                 }`}
               >
-                {CATEGORY_ICONS[cat.icon_name] || <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
-                {cat.name}
+                Todas as categorias
               </button>
-            ))}
+              {categoriesList.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(selectedCategory === cat.slug ? null : cat.slug)}
+                  className={`shrink-0 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    selectedCategory === cat.slug
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950/60 font-semibold border border-amber-400/30'
+                      : 'bg-[#0d151c] hover:bg-[#121e29] border border-[#182836] text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {CATEGORY_ICONS[cat.icon_name] || <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => scrollCategories('right')}
+              className="shrink-0 p-2 rounded-xl bg-[#0d151c]/90 hover:bg-[#182836] border border-[#182836] hover:border-amber-500/50 text-slate-300 hover:text-white transition-all shadow-md"
+              title="Rolar categorias para a direita"
+              aria-label="Rolar para a direita"
+            >
+              <ChevronRight className="w-4 h-4 text-amber-400" />
+            </button>
           </div>
         </div>
       </section>
@@ -646,7 +690,7 @@ export default function HomePage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-medium mb-1">Categoria Principal *</label>
                     <select
@@ -673,7 +717,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-medium mb-1">WhatsApp de Atendimento *</label>
                     <input
@@ -698,7 +742,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-medium mb-1">Modo de Atendimento</label>
                     <select
@@ -714,6 +758,7 @@ export default function HomePage() {
                       <option value="at_customer">A domicílio (vou até o cliente)</option>
                       <option value="at_location">No meu estabelecimento</option>
                       <option value="both">Ambos</option>
+                      <option value="online">100% Online / Nacional</option>
                     </select>
                   </div>
                   <div>
@@ -771,6 +816,28 @@ export default function HomePage() {
                       Declaro que li e subscrevo voluntariamente a <strong>Carta de Princípios da Liberdade</strong> (livre iniciativa, direito de propriedade, ética cristã/ocidental e valorização da família).
                     </span>
                   </label>
+
+                  {/* Consentimento Específico e Destacado LGPD (Art. 5º, II e Art. 11, I) */}
+                  <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300 pt-1 border-t border-[#182836]">
+                    <input
+                      type="checkbox"
+                      required
+                      checked={applicationForm.accepted_privacy}
+                      onChange={(e) => setApplicationForm({ ...applicationForm, accepted_privacy: e.target.checked })}
+                      className="mt-0.5 rounded border-gray-700 text-amber-500 focus:ring-amber-500 bg-[#070b0e]"
+                    />
+                    <span>
+                      Declaro que li e concordo com os{' '}
+                      <Link href="/termos" target="_blank" className="text-amber-400 underline font-semibold hover:text-amber-300">
+                        Termos de Uso
+                      </Link>{' '}
+                      e a{' '}
+                      <Link href="/privacidade" target="_blank" className="text-amber-400 underline font-semibold hover:text-amber-300">
+                        Política de Privacidade (LGPD)
+                      </Link>
+                      . Na condição de titular de dados ou MEI, concedo meu consentimento específico e destacado (Art. 11, I da LGPD) para o tratamento dos dados informados e associação pública à comunidade, ciente de que posso revogar este consentimento e solicitar a exclusão de meu perfil a qualquer momento.
+                    </span>
+                  </label>
                 </div>
 
                 <button
@@ -806,8 +873,8 @@ export default function HomePage() {
             <button onClick={() => setShowManifestoModal(true)} className="hover:text-amber-300">
               Carta de Princípios
             </button>
-            <Link href="/" className="hover:text-amber-300">Termos de Uso</Link>
-            <Link href="/" className="hover:text-amber-300">Política de Privacidade (LGPD)</Link>
+            <Link href="/termos" className="hover:text-amber-300">Termos de Uso</Link>
+            <Link href="/privacidade" className="hover:text-amber-300">Política de Privacidade (LGPD)</Link>
             <Link href="/painel-empresa" className="text-amber-400 hover:underline">Painel da Empresa</Link>
             <Link href="/admin" className="text-blue-400 hover:underline">Central do Administrador</Link>
           </div>

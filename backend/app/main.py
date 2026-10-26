@@ -53,6 +53,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Rotas da API v1
 app.include_router(api_router, prefix="/api/v1")
 
+# Servir uploads estáticos seguros
+import os
+from fastapi.staticfiles import StaticFiles
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../static"))
+os.makedirs(os.path.join(static_dir, "uploads"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 @app.get("/health", tags=["Health"])
 async def health_check():

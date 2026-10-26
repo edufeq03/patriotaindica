@@ -288,3 +288,143 @@ def test_triage_state_machine_rules():
     assert "approved" not in VALID_TRANSITIONS["archived"]
 
 
+def test_secure_image_upload_magic_bytes():
+    from backend.app.services.media import validate_magic_bytes
+    from fastapi import HTTPException
+
+    # Assinaturas válidas (M10)
+    fake_jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 20
+    assert validate_magic_bytes(fake_jpeg) == "JPEG"
+
+    fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+    assert validate_magic_bytes(fake_png) == "PNG"
+
+    fake_webp = b"RIFF\x00\x00\x00\x00WEBP" + b"\x00" * 20
+    assert validate_magic_bytes(fake_webp) == "WEBP"
+
+    # SVG proibido (vetor XSS)
+    fake_svg = b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+    with pytest.raises(HTTPException) as exc_info:
+        validate_magic_bytes(fake_svg)
+    assert exc_info.value.status_code == 400
+
+    # Arquivo executável / desconhecido
+    fake_exe = b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff"
+    with pytest.raises(HTTPException):
+        validate_magic_bytes(fake_exe)
+
+
+def test_csv_formula_injection_sanitization():
+    from backend.app.core.csv_sanitizer import sanitize_csv_cell
+
+    # Células perigosas (M13)
+    assert sanitize_csv_cell("=cmd|'/C calc'!A0") == "'=cmd|'/C calc'!A0"
+    assert sanitize_csv_cell("+123456789") == "'+123456789"
+    assert sanitize_csv_cell("-2+5") == "'-2+5"
+    assert sanitize_csv_cell("@SUM(1,2)") == "'@SUM(1,2)"
+    assert sanitize_csv_cell("\tscript") == "'\tscript"
+
+    # Células normais
+    assert sanitize_csv_cell("Padaria Pão Dourado") == "Padaria Pão Dourado"
+    assert sanitize_csv_cell("19999998888") == "19999998888"
+
+
+def test_invitation_hash_verification():
+    from backend.app.api.v1.endpoints.invitations import hash_token
+
+    raw_token = "secret_invite_token_xyz_123"
+    hashed = hash_token(raw_token)
+
+    # Nunca pode ser o token bruto
+    assert hashed != raw_token
+    # Deve ser hash SHA-256 de 64 caracteres hexadecimais
+    assert len(hashed) == 64
+    # Idempotente
+    assert hash_token(raw_token) == hashed
+
+
+def test_business_owner_update_security_hardening():
+    from backend.app.api.v1.endpoints.owner import BusinessOwnerUpdate
+    from pydantic import ValidationError
+
+    # Atualizações válidas
+    update = BusinessOwnerUpdate(
+        description="Novo horário e descrição atualizada.",
+        instagram="loja_oficial",
+    )
+    assert update.instagram == "loja_oficial"
+
+    # Tentativa de bypass de status ou verificação pelo dono (H3)
+    with pytest.raises(ValidationError):
+        BusinessOwnerUpdate(
+            description="Tentativa de auto-aprovação",
+            status="approved",
+        )
+
+    with pytest.raises(ValidationError):
+        BusinessOwnerUpdate(
+            description="Tentativa de auto-selo",
+            is_verified=True,
+        )
+
+    with pytest.raises(ValidationError):
+        BusinessOwnerUpdate(
+            description="Tentativa de troca de dono",
+            owner_user_id="b0000000-0000-0000-0000-000000000001",
+        )
+
+
+def test_privacy_request_validation():
+    from backend.app.api.v1.endpoints.privacy import PrivacyRequestCreate
+    from pydantic import ValidationError
+
+    # Válido (M11)
+    req = PrivacyRequestCreate(
+        request_type="deletion",
+        email="titular@empresa.com.br",
+        phone="19999998888",
+        details="Solicito a exclusão definitiva do meu cadastro de MEI.",
+    )
+    assert req.request_type == "deletion"
+    assert req.email == "titular@empresa.com.br"
+
+    # Revogação de consentimento da Carta de Princípios
+    req_rev = PrivacyRequestCreate(
+        request_type="revocation",
+        email="outro@exemplo.com",
+    )
+    assert req_rev.request_type == "revocation"
+
+    # Tipo inválido rejeitado
+    with pytest.raises(ValidationError):
+        PrivacyRequestCreate(
+            request_type="invalid_action",
+            email="titular@empresa.com.br",
+        )
+
+    # E-mail inválido rejeitado
+    with pytest.raises(ValidationError):
+        PrivacyRequestCreate(
+            request_type="deletion",
+            email="not-an-email",
+        )
+
+
+def test_pyjwt_crypto_tokens():
+    from backend.app.core.security import create_access_token, decode_access_token
+
+    token = create_access_token(subject="user_123", role="owner")
+    assert isinstance(token, str)
+
+    payload = decode_access_token(token)
+    assert payload is not None
+    assert payload["sub"] == "user_123"
+    assert payload["role"] == "owner"
+    assert "exp" in payload
+    assert "jti" in payload
+
+    # Token adulterado deve retornar None
+    tampered = token[:-4] + "abcd"
+    assert decode_access_token(tampered) is None
+
+
