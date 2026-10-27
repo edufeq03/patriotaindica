@@ -440,9 +440,41 @@ export default function AdminDashboardPage() {
   };
 
   // Gerar Convite (Canal B)
-  const handleGenerateInvite = () => {
+  const handleGenerateInvite = async () => {
     const business = businesses.find(b => b.id === selectedForInvite);
     if (!business) return;
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(business.id);
+    if (isUuid && authSession?.token) {
+      try {
+        const res = await fetch('/api/v1/invitations', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authSession.token}`,
+          },
+          body: JSON.stringify({
+            business_id: business.id,
+            phone: business.whatsapp || '19999999999',
+            days_valid: 7,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const newInvite = {
+            id: `inv-${Date.now()}`,
+            token: data.raw_token,
+            businessName: business.name,
+            phone: business.whatsapp,
+            expires_at: data.expires_at ? data.expires_at.split('T')[0] : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          };
+          setInvitations([newInvite, ...invitations]);
+          return;
+        }
+      } catch (err) {
+        console.warn('Erro ao registrar convite na API:', err);
+      }
+    }
 
     const token = `conv_${business.city.toLowerCase()}_${Math.random().toString(36).substring(2, 9)}`;
     const newInvite = {
@@ -1407,8 +1439,9 @@ export default function AdminDashboardPage() {
               <h3 className="text-sm font-bold text-white">Convites Gerados</h3>
               <div className="space-y-2">
                 {invitations.map((inv) => {
-                  const inviteUrl = `https://guialocal.com.br/convite/${inv.token}`;
-                  const whatsappMessage = `Olá! Sua empresa *${inv.businessName}* foi pré-selecionada para participar do Guia Local Curado de Campinas. Acesse o link exclusivo para confirmar seus dados: ${inviteUrl}`;
+                  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://patriotaindica.com';
+                  const inviteUrl = `${origin}/convite/${inv.token}`;
+                  const whatsappMessage = `Olá! Sua empresa *${inv.businessName}* foi selecionada para fazer parte da rede oficial do *Patriota Indica*. Acesse seu link exclusivo de convite para conferir e ativar seu cadastro: ${inviteUrl}`;
 
                   return (
                     <div
