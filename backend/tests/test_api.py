@@ -141,3 +141,25 @@ def test_enum_compilation_no_varchar_cast():
     assert "to_status)s::VARCHAR" not in compiled_log
 
 
+def test_search_endpoint_success_with_mock_db():
+    """Garante que /api/v1/search responde 200 e lista os negócios sem erro."""
+    async def override_get_db():
+        mock_db = AsyncMock()
+        mock_scalar = MagicMock()
+        mock_scalar.scalars.return_value.all.return_value = []
+        mock_scalar.all.return_value = []
+        mock_db.execute.return_value = mock_scalar
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = client.get("/api/v1/search?page=1&limit=20")
+        assert response.status_code == 200
+        data = response.json()
+        assert "results" in data
+        assert "page" in data
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+
