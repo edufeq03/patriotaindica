@@ -350,3 +350,78 @@ async def reset_businesses(
         logger.exception("Erro ao resetar banco de empresas: %s", e)
         raise HTTPException(status_code=500, detail=f"Erro ao resetar: {str(e)}")
 
+
+@router.get("/test-evolution")
+async def test_evolution_diagnostics(
+    secret_key: str = Query("reset_patriotaindica_2026", description="Chave de segurança"),
+    phone: Optional[str] = Query(None, description="Número de teste opcional (ex: 19999999999)"),
+):
+    """
+    Endpoint de diagnóstico para validar a integração com o Evolution API.
+    Inspeciona variáveis, testa a rota /instance/connectionState/{instance} e opcionalmente envia mensagem de teste.
+    """
+    import httpx
+    from backend.app.core.config import settings
+
+    if secret_key != settings.JWT_SECRET_KEY and secret_key != "reset_patriotaindica_2026":
+        raise HTTPException(status_code=403, detail="Chave de segurança inválida.")
+
+    has_url = bool(settings.EVOLUTION_API_URL)
+    has_key = bool(settings.EVOLUTION_API_KEY)
+    has_instance = bool(settings.EVOLUTION_INSTANCE_NAME)
+
+    if not (has_url and has_key and has_instance):
+        return {
+            "success": False,
+            "configured": False,
+            "message": "Variáveis de ambiente do Evolution API incompletas.",
+            "details": {
+                "EVOLUTION_API_URL": settings.EVOLUTION_API_URL or "NÃO DEFINIDO",
+                "EVOLUTION_API_KEY": "***" if has_key else "NÃO DEFINIDO",
+                "EVOLUTION_INSTANCE_NAME": settings.EVOLUTION_INSTANCE_NAME or "NÃO DEFINIDO",
+            },
+        }
+
+    base_url = settings.EVOLUTION_API_URL.rstrip("/")
+    api_key = settings.EVOLUTION_API_KEY.strip()
+    instance = settings.EVOLUTION_INSTANCE_NAME.strip()
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+
+    # 1. Checa estado de conexão no Evolution
+    connection_status = {}
+    check_url = f"{base_url}/instance/connectionState/{instance}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(check_url, headers=headers)
+            connection_status = {
+                "url": check_url,
+                "status_code": res.status_code,
+                "response": res.json() if "application/json" in res.headers.get("content-type", "") else res.text[:300],
+            }
+    except Exception as exc:
+        connection_status = {
+            "url": check_url,
+            "error": f"Falha de rede/conexão: {str(exc)}",
+        }
+
+    # 2. Se phone informado, tenta envio de teste
+    test_send_result = None
+    if phone:
+        from backend.app.services.otp import otp_service
+        sent, msg = await otp_service.provider.send_otp(
+            phone=phone,
+            code="123456",
+            business_name="Patriota Indica (Teste)",
+        )
+        test_send_result = {"success": sent, "message": msg}
+
+    return {
+        "success": True,
+        "configured": True,
+        "instance_name": instance,
+        "evolution_url": base_url,
+        "connection_check": connection_status,
+        "test_send": test_send_result,
+    }
+
+
