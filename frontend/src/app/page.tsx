@@ -40,6 +40,7 @@ import {
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
 import { Business, Category, ListingType } from '@/lib/types';
 import ManifestoModal, { MANIFESTO_VERSION } from '@/components/ManifestoModal';
+import { getBusinessBannerUrl } from '@/lib/categoryBanners';
 
 // Mapeamento de ícones para as categorias
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -761,16 +762,10 @@ export default function HomePage() {
                 <div>
                   <div className="relative h-44 w-full bg-[#070b0e] overflow-hidden">
                     <Link href={profileUrl} className="block w-full h-full">
-                      {business.banner_url ? (
-                        <div
-                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                          style={{ backgroundImage: `url(${business.banner_url})` }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-[#0d151c] text-slate-600">
-                          <Building2 className="w-12 h-12" />
-                        </div>
-                      )}
+                      <div
+                        className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
+                        style={{ backgroundImage: `url(${getBusinessBannerUrl(business)})` }}
+                      />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#0d151c] via-[#0d151c]/30 to-transparent" />
                     </Link>
 

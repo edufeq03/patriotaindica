@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Business } from '@/lib/types';
 import ManifestoModal from '@/components/ManifestoModal';
+import { getBusinessBannerUrl } from '@/lib/categoryBanners';
 
 interface Props {
   business: Business;
@@ -150,12 +151,10 @@ export default function BusinessProfileView({ business, city, category, slug }: 
 
         {/* Hero Card */}
         <div className="relative rounded-2xl overflow-hidden border border-[#182836] bg-[#0d151c] p-6 md:p-8 backdrop-blur-sm shadow-2xl">
-          {business.banner_url && (
-            <div 
-              className="absolute inset-0 opacity-15 bg-cover bg-center"
-              style={{ backgroundImage: `url(${business.banner_url})` }}
-            />
-          )}
+          <div 
+            className="absolute inset-0 opacity-20 bg-cover bg-center"
+            style={{ backgroundImage: `url(${getBusinessBannerUrl(business)})` }}
+          />
           <div className="relative z-10 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-2">
