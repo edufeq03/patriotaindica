@@ -63,6 +63,159 @@ class BusinessOwnerUpdate(BaseModel):
         return v
 
 
+@router.get("/my-businesses")
+async def get_my_businesses(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retorna os negócios pertencentes ao usuário autenticado (ou todos os negócios, se for admin).
+    """
+    if current_user.role == "admin":
+        stmt = select(Business).order_by(Business.created_at.desc())
+    else:
+        stmt = select(Business).where(Business.owner_user_id == current_user.id).order_by(Business.created_at.desc())
+
+    result = await db.execute(stmt)
+    businesses = result.scalars().all()
+
+    return [
+        {
+            "id": str(b.id),
+            "name": b.name,
+            "slug": b.slug,
+            "description": b.description,
+            "listing_type": b.listing_type,
+            "service_mode": b.service_mode,
+            "service_radius_km": b.service_radius_km,
+            "whatsapp": b.whatsapp,
+            "phone": b.phone,
+            "website": b.website,
+            "instagram": b.instagram,
+            "street": b.street,
+            "number": b.number,
+            "neighborhood": b.neighborhood,
+            "city": b.city,
+            "state": b.state,
+            "postal_code": b.postal_code,
+            "show_full_address": b.show_full_address,
+            "logo_url": b.logo_url,
+            "banner_url": b.banner_url,
+            "status": b.status,
+            "is_verified": b.is_verified,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        }
+        for b in businesses
+    ]
+
+
+@router.post("/{business_id}/toggle-pause")
+async def toggle_business_pause(
+    business_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Pausa ou reativa um anúncio aprovado pelo dono do negócio.
+    """
+    stmt = select(Business).where(Business.id == business_id)
+    business = (await db.execute(stmt)).scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    if business.owner_user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Você não tem permissão para gerenciar esta empresa.")
+
+    if business.status == "approved":
+        business.status = "suspended"
+        msg = "Anúncio pausado com sucesso. Ele foi ocultado temporariamente das buscas públicas."
+    elif business.status == "suspended":
+        business.status = "approved"
+        msg = "Anúncio reativado com sucesso! Já está visível novamente nas buscas públicas."
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não é possível pausar um anúncio em status '{business.status}'. Apenas anúncios ativos podem ser pausados.",
+        )
+
+    await db.commit()
+    await db.refresh(business)
+    return {
+        "success": True,
+        "status": business.status,
+        "message": msg,
+    }
+
+
+@router.put("/{business_id}/profile")
+async def update_business_profile(
+    business_id: UUID,
+    payload: BusinessOwnerUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Atualiza dados do perfil da empresa diretamente pelo proprietário.
+    Campos como descrição, fotos, instagram, website são atualizados de imediato.
+    Se alterar WhatsApp ou Localização, o status volta para 'pending_review' para revalidação de segurança.
+    """
+    stmt = select(Business).where(Business.id == business_id)
+    business = (await db.execute(stmt)).scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    if business.owner_user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Você não tem permissão para gerenciar esta empresa.")
+
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="Nenhum dado informado para atualização.")
+
+    sensitive_keys = {"whatsapp", "neighborhood", "city", "street", "number"}
+    reopened = False
+
+    for key, val in changes.items():
+        if hasattr(business, key):
+            setattr(business, key, val)
+        if key in sensitive_keys and val:
+            reopened = True
+
+    if reopened and business.status == "approved":
+        business.status = "pending_review"
+
+    await db.commit()
+    await db.refresh(business)
+
+    return {
+        "success": True,
+        "reopened_triage": reopened,
+        "status": business.status,
+        "message": (
+            "Perfil atualizado! Por conter alteração de WhatsApp ou Endereço, o status reabriu para 'Em Análise' na triagem por segurança."
+            if reopened
+            else "Perfil atualizado com sucesso no seu anúncio público!"
+        ),
+        "business": {
+            "id": str(business.id),
+            "name": business.name,
+            "description": business.description,
+            "whatsapp": business.whatsapp,
+            "phone": business.phone,
+            "website": business.website,
+            "instagram": business.instagram,
+            "neighborhood": business.neighborhood,
+            "city": business.city,
+            "state": business.state,
+            "service_mode": business.service_mode,
+            "service_radius_km": business.service_radius_km,
+            "logo_url": business.logo_url,
+            "banner_url": business.banner_url,
+            "status": business.status,
+            "is_verified": business.is_verified,
+        },
+    }
+
+
 @router.post("/{business_id}/propose-changes")
 async def propose_business_changes(
     business_id: UUID,
@@ -81,19 +234,16 @@ async def propose_business_changes(
     if not business:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
 
-    # Apenas o proprietário vinculado ou um administrador pode propor mudanças
     if business.owner_user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Você não possui permissão para gerenciar esta empresa.",
         )
 
-    # Filtrar apenas campos preenchidos
     changes_dict = payload.model_dump(exclude_unset=True)
     if not changes_dict:
         raise HTTPException(status_code=400, detail="Nenhuma alteração informada.")
 
-    # Gravar registro de alteração pendente
     pending_change = BusinessPendingChange(
         business_id=business.id,
         proposed_by_user_id=current_user.id,
@@ -169,7 +319,6 @@ async def decide_pending_change(
 
     if action == "approve":
         pending.status = "approved"
-        # Aplicar alterações na empresa
         for field, value in pending.changes.items():
             if hasattr(business, field):
                 setattr(business, field, value)
