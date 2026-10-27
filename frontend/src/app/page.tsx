@@ -86,6 +86,11 @@ export default function HomePage() {
   const [selectedType, setSelectedType] = useState<ListingType | 'all'>('all');
   const [maxDistanceKm, setMaxDistanceKm] = useState<number | null>(null);
 
+  // Paginação de cards na vitrine
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+  const resultsRef = useRef<HTMLElement>(null);
+
   // Ref e função para rolagem horizontal das categorias
   const categoriesRef = useRef<HTMLDivElement>(null);
   const scrollCategories = (direction: 'left' | 'right') => {
@@ -149,7 +154,7 @@ export default function HomePage() {
       }
 
       try {
-        const searchRes = await fetch('/api/v1/search?page=1&limit=50');
+        const searchRes = await fetch('/api/v1/search?page=1&limit=100');
         if (searchRes.ok) {
           const data = await searchRes.json();
           if (isMounted && data?.results && Array.isArray(data.results) && data.results.length > 0) {
@@ -263,6 +268,50 @@ export default function HomePage() {
       })
       .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
   }, [businesses, userLocation, searchQuery, selectedCategory, selectedType, maxDistanceKm]);
+
+  // Resetar página ao alterar filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedType, maxDistanceKm]);
+
+  // Cálculos de Paginação
+  const totalPages = Math.max(1, Math.ceil(filteredBusinesses.length / itemsPerPage));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const paginatedBusinesses = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredBusinesses.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredBusinesses, currentPage, itemsPerPage]);
+
+  const pageNumbers = useMemo(() => {
+    const pages: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 4) {
+        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+      } else if (currentPage >= totalPages - 3) {
+        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+      } else {
+        pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+      }
+    }
+    return pages;
+  }, [totalPages, currentPage]);
+
+  const goToPage = (pageNumber: number) => {
+    const target = Math.max(1, Math.min(pageNumber, totalPages));
+    setCurrentPage(target);
+    if (resultsRef.current) {
+      const topOffset = resultsRef.current.getBoundingClientRect().top + window.scrollY - 90;
+      window.scrollTo({ top: topOffset, behavior: 'smooth' });
+    }
+  };
 
   // Submeter Candidatura Real (Canal C - "Quero ser indicado" -> PostgreSQL)
   const handleSubmitApplication = async (e: React.FormEvent) => {
@@ -634,29 +683,59 @@ export default function HomePage() {
       </section>
 
       {/* Grid de Resultados */}
-      <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <p>
-            Mostrando <strong className="text-white font-bold">{filteredBusinesses.length}</strong> empresas com curadoria aprovada em{' '}
+      <main ref={resultsRef} id="vitrine" className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
+          <div>
+            Mostrando{' '}
+            <strong className="text-white font-bold">
+              {filteredBusinesses.length === 0
+                ? 0
+                : `${(currentPage - 1) * itemsPerPage + 1}–${Math.min(currentPage * itemsPerPage, filteredBusinesses.length)}`}
+            </strong>{' '}
+            de <strong className="text-white font-bold">{filteredBusinesses.length}</strong> empresas com curadoria aprovada em{' '}
             <strong className="text-amber-400">{userLocation.label}</strong>
-          </p>
-          {(selectedCategory || searchQuery || selectedType !== 'all') && (
-            <button
-              onClick={() => {
-                setSelectedCategory(null);
-                setSearchQuery('');
-                setSelectedType('all');
-              }}
-              className="text-amber-400 hover:underline font-semibold"
-            >
-              Limpar filtros
-            </button>
-          )}
+          </div>
+
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <span className="text-[11px] text-slate-500">Exibir:</span>
+              {[6, 12, 24].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => {
+                    setItemsPerPage(size);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                    itemsPerPage === size
+                      ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
+                      : 'text-slate-400 hover:text-white bg-[#0d151c] border border-[#182836]'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+
+            {(selectedCategory || searchQuery || selectedType !== 'all') && (
+              <button
+                onClick={() => {
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                  setSelectedType('all');
+                  setCurrentPage(1);
+                }}
+                className="text-amber-400 hover:underline font-semibold"
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Grid de Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredBusinesses.map((business) => {
+          {paginatedBusinesses.map((business) => {
             const isCustomerService = business.service_mode === 'at_customer' || business.service_mode === 'both';
             const cityParam = (business.city || 'brasil')
               .toLowerCase()
@@ -790,6 +869,65 @@ export default function HomePage() {
             );
           })}
         </div>
+
+        {/* Controles de Paginação */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-[#182836]">
+            <p className="text-xs text-slate-400">
+              Página <span className="font-semibold text-white">{currentPage}</span> de{' '}
+              <span className="font-semibold text-white">{totalPages}</span> ({filteredBusinesses.length} empresas encontradas)
+            </p>
+
+            <div className="flex items-center gap-1.5 flex-wrap justify-center">
+              <button
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0d151c] border border-[#182836] text-slate-300 hover:text-white hover:border-amber-500/40 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                title="Página anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">Anterior</span>
+              </button>
+
+              <div className="flex items-center gap-1">
+                {pageNumbers.map((page, idx) => {
+                  if (page === '...') {
+                    return (
+                      <span key={`ellipsis-${idx}`} className="px-2 py-1 text-xs text-slate-500">
+                        ...
+                      </span>
+                    );
+                  }
+                  const pageNum = page as number;
+                  const isActive = currentPage === pageNum;
+                  return (
+                    <button
+                      key={`page-${pageNum}`}
+                      onClick={() => goToPage(pageNum)}
+                      className={`min-w-[34px] h-8 px-2.5 rounded-lg text-xs font-bold transition-all ${
+                        isActive
+                          ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                          : 'bg-[#0d151c] border border-[#182836] text-slate-300 hover:text-white hover:border-amber-500/40'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0d151c] border border-[#182836] text-slate-300 hover:text-white hover:border-amber-500/40 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                title="Próxima página"
+              >
+                <span className="hidden sm:inline">Próxima</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Empty State */}
         {filteredBusinesses.length === 0 && (

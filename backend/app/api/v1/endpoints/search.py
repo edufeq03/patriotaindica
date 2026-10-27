@@ -26,7 +26,7 @@ async def search_nearby_businesses(
     state: Optional[str] = Query(None, max_length=2, description="Filtro por UF"),
     city: Optional[str] = Query(None, max_length=100, description="Filtro por Cidade"),
     page: int = Query(1, ge=1, le=50, description="Página"),
-    limit: int = Query(50, ge=1, le=100, description="Itens por página"),
+    limit: int = Query(50, ge=1, le=200, description="Itens por página"),
     db: AsyncSession = Depends(get_db),
 ):
     """
