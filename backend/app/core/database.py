@@ -30,14 +30,14 @@ async def set_db_app_context(session: AsyncSession, user_id: str = None, role: s
     current_setting('app.user_id') e current_setting('app.role').
     """
     try:
-        safe_user = user_id if user_id else ""
-        safe_role = role if role else "anonymous"
+        safe_user = str(user_id) if user_id else ""
+        safe_role = str(role) if role else "anonymous"
         await session.execute(
-            text("SET LOCAL app.user_id = :uid; SET LOCAL app.role = :role;"),
+            text("SELECT set_config('app.user_id', :uid, true), set_config('app.role', :role, true);"),
             {"uid": safe_user, "role": safe_role},
         )
     except Exception:
-        # Em SQLite ou testes unitários sem suporte a SET LOCAL app.*, prossegue normalmente
+        # Em SQLite ou testes unitários sem suporte a set_config, prossegue normalmente
         pass
 
 

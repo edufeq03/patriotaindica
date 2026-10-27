@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -16,6 +17,7 @@ from backend.app.models.events import BusinessReviewLog
 from backend.app.models.user import User
 from backend.app.schemas.triage import TriageDecisionRequest
 
+logger = logging.getLogger("patriotaindica")
 router = APIRouter()
 
 # Máquina de Estados Válida para Triagem (Item M7 do Relatório)
@@ -210,83 +212,93 @@ async def apply_triage_decision(
     - reviewed_by e admin_id sempre preenchidos
     - Exige justificativa formal se o CNPJ constar inativo
     """
-    stmt = select(Business).where(Business.id == business_id)
-    business = (await db.execute(stmt)).scalar_one_or_none()
+    try:
+        stmt = select(Business).where(Business.id == business_id)
+        business = (await db.execute(stmt)).scalar_one_or_none()
 
-    if not business:
-        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+        if not business:
+            raise HTTPException(status_code=404, detail="Empresa não encontrada.")
 
-    old_status = business.status
-    target_status_map = {
-        "approve": "approved",
-        "request_changes": "needs_info",
-        "reject": "rejected",
-        "suspend": "suspended",
-    }
+        old_status = business.status
+        target_status_map = {
+            "approve": "approved",
+            "request_changes": "needs_info",
+            "reject": "rejected",
+            "suspend": "suspended",
+        }
 
-    new_status = target_status_map.get(payload.action)
-    if not new_status:
-        raise HTTPException(status_code=400, detail="Ação de triagem inválida.")
+        new_status = target_status_map.get(payload.action)
+        if not new_status:
+            raise HTTPException(status_code=400, detail="Ação de triagem inválida.")
 
-    # Validação da máquina de estados (M7)
-    allowed_transitions = VALID_TRANSITIONS.get(old_status, set())
-    if new_status not in allowed_transitions:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transição de status inválida: de '{old_status}' para '{new_status}'.",
-        )
-
-    # Regras específicas de aprovação (M7 & Sec 4)
-    if new_status == "approved":
-        # 1. Verificar se há nichos pendentes vinculados
-        pending_cats_stmt = (
-            select(Category.name)
-            .join(BusinessCategory, BusinessCategory.category_id == Category.id)
-            .where(
-                BusinessCategory.business_id == business.id,
-                Category.status == "pending",
-            )
-        )
-        pending_cats = (await db.execute(pending_cats_stmt)).scalars().all()
-        if pending_cats:
+        # Validação da máquina de estados (M7)
+        allowed_transitions = VALID_TRANSITIONS.get(old_status, set())
+        if new_status not in allowed_transitions:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Não é possível aprovar a empresa. Os seguintes nichos propostos estão pendentes de moderação: {', '.join(pending_cats)}. Aprove ou mescle-os primeiro.",
+                detail=f"Transição de status inválida: de '{old_status}' para '{new_status}'.",
             )
 
-        # 2. Exigir justificativa se CNPJ estiver baixado/inativo
-        if business.cnpj_situation and any(x in business.cnpj_situation.upper() for x in ("BAIXADA", "INAPTA", "CANCELADA")):
-            if not payload.note or len(payload.note.strip()) < 10:
+        # Regras específicas de aprovação (M7 & Sec 4)
+        if new_status == "approved":
+            # 1. Verificar se há nichos pendentes vinculados
+            pending_cats_stmt = (
+                select(Category.name)
+                .join(BusinessCategory, BusinessCategory.category_id == Category.id)
+                .where(
+                    BusinessCategory.business_id == business.id,
+                    Category.status == "pending",
+                )
+            )
+            pending_cats = (await db.execute(pending_cats_stmt)).scalars().all()
+            if pending_cats:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="CNPJ com situação cadastral inativa/baixada. Para aprovar com override, é obrigatório registrar justificativa detalhada (mínimo 10 caracteres).",
+                    detail=f"Não é possível aprovar a empresa. Os seguintes nichos propostos estão pendentes de moderação: {', '.join(pending_cats)}. Aprove ou mescle-os primeiro.",
                 )
 
-    business.status = new_status
-    business.reviewed_by = current_admin.id
-    business.reviewed_at = func.now()
+            # 2. Exigir justificativa se CNPJ estiver baixado/inativo
+            if business.cnpj_situation and any(x in business.cnpj_situation.upper() for x in ("BAIXADA", "INAPTA", "CANCELADA")):
+                if not payload.note or len(payload.note.strip()) < 10:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="CNPJ com situação cadastral inativa/baixada. Para aprovar com override, é obrigatório registrar justificativa detalhada (mínimo 10 caracteres).",
+                    )
 
-    if payload.action == "reject":
-        business.rejection_reason = payload.note
-    if payload.is_verified is not None:
-        business.is_verified = payload.is_verified
+        business.status = new_status
+        business.reviewed_by = current_admin.id
+        business.reviewed_at = func.now()
 
-    # Registrar log de auditoria append-only
-    log_entry = BusinessReviewLog(
-        business_id=business.id,
-        from_status=old_status,
-        to_status=new_status,
-        note=payload.note,
-        admin_id=current_admin.id,
-    )
-    db.add(log_entry)
-    await db.commit()
+        if payload.action == "reject":
+            business.rejection_reason = payload.note
+        if payload.is_verified is not None:
+            business.is_verified = payload.is_verified
 
-    return {
-        "success": True,
-        "business_id": business.id,
-        "from_status": old_status,
-        "to_status": new_status,
-        "is_verified": business.is_verified,
-        "reviewed_by": current_admin.id,
-    }
+        # Registrar log de auditoria append-only
+        log_entry = BusinessReviewLog(
+            business_id=business.id,
+            from_status=old_status,
+            to_status=new_status,
+            note=payload.note,
+            admin_id=current_admin.id,
+        )
+        db.add(log_entry)
+        await db.commit()
+
+        return {
+            "success": True,
+            "business_id": business.id,
+            "from_status": old_status,
+            "to_status": new_status,
+            "is_verified": business.is_verified,
+            "reviewed_by": current_admin.id,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Erro ao persistir decisão de triagem: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro no banco ao salvar decisão ({exc.__class__.__name__}): {str(exc)}",
+        )

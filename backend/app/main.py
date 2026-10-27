@@ -39,10 +39,11 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Exceção não tratada capturada em %s: %s", request.url.path, exc)
-    if settings.DEBUG:
+    is_admin = request.url.path.startswith("/api/v1/triage") or request.url.path.startswith("/api/v1/auth")
+    if settings.DEBUG or is_admin:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": str(exc)},
+            content={"detail": f"Erro interno ({exc.__class__.__name__}): {str(exc)}"},
         )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -74,6 +75,13 @@ async def apply_runtime_migrations():
             await session.execute(text("""
                 DO $$ BEGIN
                     ALTER TABLE businesses ALTER COLUMN location DROP NOT NULL;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+                DO $$ BEGIN
+                    ALTER TABLE businesses NO FORCE ROW LEVEL SECURITY;
+                    ALTER TABLE business_review_log NO FORCE ROW LEVEL SECURITY;
+                    ALTER TABLE categories NO FORCE ROW LEVEL SECURITY;
+                    ALTER TABLE business_categories NO FORCE ROW LEVEL SECURITY;
                 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
                 DO $$ BEGIN
