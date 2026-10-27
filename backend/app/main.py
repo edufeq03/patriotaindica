@@ -117,6 +117,47 @@ async def apply_runtime_migrations():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     resolved_at TIMESTAMPTZ
                 );""",
+                """INSERT INTO categories (name, slug, kind, icon_name, display_order, status)
+                VALUES
+                  ('Eletricista', 'eletricista', 'service', 'zap', 1, 'approved'),
+                  ('Encanador e Desentupidora', 'encanador-desentupidora', 'service', 'droplets', 2, 'approved'),
+                  ('Ar-condicionado e Climatização', 'ar-condicionado-climatizacao', 'service', 'wind', 3, 'approved'),
+                  ('Pintor e Reformas', 'pintor-reformas', 'service', 'paint-brush', 4, 'approved'),
+                  ('Chaveiro 24h', 'chaveiro', 'service', 'key', 5, 'approved'),
+                  ('Marcenaria e Móveis Planejados', 'marcenaria', 'service', 'hammer', 6, 'approved'),
+                  ('Serralheria e Esquadrias', 'serralheria', 'service', 'shield', 7, 'approved'),
+                  ('Vidraçaria', 'vidracaria', 'service', 'square', 8, 'approved'),
+                  ('Diarista e Limpeza Profissional', 'diarista-limpeza', 'service', 'sparkles', 9, 'approved'),
+                  ('Dedetizadora e Controle de Pragas', 'dedetizadora', 'service', 'shield-alert', 10, 'approved'),
+                  ('Jardinagem e Paisagismo', 'jardinagem', 'service', 'flower-2', 11, 'approved'),
+                  ('Fretes e Mudanças', 'fretes-mudancas', 'service', 'truck', 12, 'approved'),
+                  ('Mecânica e Autoelétrica', 'mecanica-autoeletrica', 'service', 'car', 13, 'approved'),
+                  ('Funilaria e Pintura Automotiva', 'funilaria-pintura', 'service', 'gauge', 14, 'approved'),
+                  ('Borracharia e Pneus', 'borracharia-pneus', 'service', 'disc', 15, 'approved'),
+                  ('Lava-Rápido e Estética Automotiva', 'lava-rapido', 'service', 'waves', 16, 'approved'),
+                  ('Assistência de Celulares e Tablets', 'celulares-tablets', 'service', 'smartphone', 17, 'approved'),
+                  ('Manutenção de Computadores e Redes', 'informatica-redes', 'service', 'laptop', 18, 'approved'),
+                  ('Instalação de Câmeras e Segurança', 'seguranca-eletronica', 'service', 'cctv', 19, 'approved'),
+                  ('Barbearia e Salão de Beleza', 'barbearia-salao', 'both', 'scissors', 20, 'approved'),
+                  ('Estética e Cuidados Pessoais', 'estetica-beleza', 'both', 'sparkle', 21, 'approved'),
+                  ('Personal Trainer e Fisioterapia', 'personal-fisioterapia', 'service', 'activity', 22, 'approved'),
+                  ('Pet Shop e Banho & Tosa', 'pet-shop-banho-tosa', 'both', 'paw-print', 23, 'approved'),
+                  ('Clínica Veterinária', 'veterinaria', 'service', 'stethoscope', 24, 'approved'),
+                  ('Marmitas e Comida Caseira', 'marmitas-alimentacao', 'product', 'utensils', 25, 'approved'),
+                  ('Padaria e Confeitaria Artesanal', 'padaria-confeitaria', 'product', 'cake', 26, 'approved'),
+                  ('Hortifruti e Orgânicos', 'hortifruti-organicos', 'product', 'apple', 27, 'approved'),
+                  ('Água Mineral e Gás', 'agua-gas', 'product', 'flame', 28, 'approved'),
+                  ('Materiais de Construção', 'materiais-construcao', 'both', 'hard-hat', 29, 'approved'),
+                  ('Flores e Plantas Ornamentais', 'floricultura', 'product', 'leaf', 30, 'approved'),
+                  ('Costura e Ajustes', 'costura-ajustes', 'service', 'needle', 31, 'approved'),
+                  ('Papelaria e Presentes', 'papelaria-presentes', 'product', 'book-open', 32, 'approved')
+                ON CONFLICT (slug) DO UPDATE
+                SET
+                  name = EXCLUDED.name,
+                  kind = EXCLUDED.kind,
+                  icon_name = EXCLUDED.icon_name,
+                  display_order = EXCLUDED.display_order,
+                  status = 'approved';""",
             ]
             for stmt in ddl_statements:
                 try:
