@@ -31,10 +31,10 @@ VALID_TRANSITIONS: Dict[str, set] = {
 
 @router.get("/queue")
 async def get_triage_queue(
-    status_filter: Optional[str] = Query("pending_review"),
+    status_filter: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
-    limit: int = Query(50, le=100),
+    limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(get_current_active_admin),
@@ -47,12 +47,12 @@ async def get_triage_queue(
         .options(
             selectinload(Business.categories).joinedload(BusinessCategory.category)
         )
-        .order_by(Business.created_at.asc())
+        .order_by(Business.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
 
-    if status_filter:
+    if status_filter and status_filter != "all":
         stmt = stmt.where(Business.status == status_filter)
     if city:
         stmt = stmt.where(Business.city.ilike(f"%{city}%"))
@@ -71,16 +71,28 @@ async def get_triage_queue(
             "id": b.id,
             "name": b.name,
             "slug": b.slug,
+            "description": b.description or "",
+            "listing_type": b.listing_type or "service",
+            "service_mode": b.service_mode or "at_customer",
+            "service_radius_km": b.service_radius_km or 20,
             "document_number": b.document_number,
-            "document_type": b.document_type,
+            "document_type": b.document_type or "CNPJ",
+            "cnpj_situation": b.cnpj_situation,
             "whatsapp": b.whatsapp,
+            "phone": b.phone or "",
+            "website": b.website or "",
+            "instagram": b.instagram or "",
+            "street": b.street or "",
+            "number": b.number or "",
+            "neighborhood": b.neighborhood,
             "city": b.city,
             "state": b.state,
-            "neighborhood": b.neighborhood,
+            "postal_code": b.postal_code or "",
+            "show_full_address": bool(b.show_full_address),
             "status": b.status,
             "source": b.source,
-            "is_verified": b.is_verified,
-            "primary_category": primary_cat,
+            "is_verified": bool(b.is_verified),
+            "primary_category": primary_cat or "Serviços",
             "pending_niches": pending_niches,
             "created_at": b.created_at,
         })

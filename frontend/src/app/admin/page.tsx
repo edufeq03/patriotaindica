@@ -190,14 +190,20 @@ export default function AdminDashboardPage() {
             category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
             whatsapp: item.whatsapp,
             phone: item.phone || '',
+            website: item.website || '',
+            instagram: item.instagram || '',
+            street: item.street || '',
+            number: item.number || '',
             neighborhood: item.neighborhood,
             city: item.city,
             state: item.state,
-            show_full_address: false,
+            postal_code: item.postal_code || '',
+            show_full_address: !!item.show_full_address,
+            cnpj_situation: item.cnpj_situation || '',
             latitude: -22.9064,
             longitude: -47.0592,
             status: item.status,
-            is_verified: item.is_verified,
+            is_verified: !!item.is_verified,
             document_type: item.document_type || 'CNPJ',
             document_number: item.document_number,
             created_at: item.created_at,
@@ -366,7 +372,7 @@ export default function AdminDashboardPage() {
           needs_info: 'request_changes',
           reject: 'reject',
         };
-        await fetch(`/api/v1/triage/decision/${selectedBusiness.id}`, {
+        const res = await fetch(`/api/v1/triage/decision/${selectedBusiness.id}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -378,8 +384,16 @@ export default function AdminDashboardPage() {
             is_verified: action === 'approve' ? grantVerifiedSeal : false,
           }),
         });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          alert(`Atenção ao registrar decisão: ${errData?.detail || 'Erro na resposta da API'}`);
+          return;
+        }
       } catch (err) {
         console.warn('Erro ao persistir decisão no banco:', err);
+        alert('Erro de conexão ao salvar decisão no banco de dados.');
+        return;
       }
     }
 

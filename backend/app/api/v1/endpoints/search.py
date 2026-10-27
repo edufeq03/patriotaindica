@@ -82,8 +82,7 @@ async def search_nearby_businesses(
     for r in returned_rows:
         item = dict(r)
 
-        # H6: Ocultar telefones na listagem pública de cards (anti-scraping)
-        item["whatsapp"] = None
+        # Ocultar telefone fixo em listagem aberta, mas preservar WhatsApp para contato direto
         item["phone"] = None
 
         # Ocultar campos cadastrais de endereço se show_full_address for falso
@@ -95,6 +94,19 @@ async def search_nearby_businesses(
         item["serves_customer_location"] = (
             item.get("service_mode") in ("at_customer", "both")
         )
+        item["status"] = "approved"
+
+        if not item.get("category_slug") and item.get("category_name"):
+            import re
+            import unicodedata
+            item["category_slug"] = re.sub(
+                r"[^a-z0-9]+",
+                "-",
+                unicodedata.normalize("NFKD", str(item["category_name"]))
+                .encode("ASCII", "ignore")
+                .decode("utf-8")
+                .lower(),
+            ).strip("-")
         items.append(item)
 
     return {

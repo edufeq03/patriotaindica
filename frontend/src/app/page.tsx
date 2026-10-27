@@ -147,7 +147,16 @@ export default function HomePage() {
         if (searchRes.ok) {
           const data = await searchRes.json();
           if (isMounted && data?.results && Array.isArray(data.results) && data.results.length > 0) {
-            setBusinesses(data.results);
+            setBusinesses(data.results.map((b: any) => ({
+              ...b,
+              status: b.status || 'approved',
+              category_name: b.category_name || 'Serviços',
+              category_slug: b.category_slug || (b.category_name ? b.category_name.toLowerCase().replace(/\s+/g, '-') : 'servicos'),
+              whatsapp: b.whatsapp || '',
+              latitude: typeof b.latitude === 'number' ? b.latitude : -22.9064,
+              longitude: typeof b.longitude === 'number' ? b.longitude : -47.0592,
+              distance_km: typeof b.distance_km === 'number' ? b.distance_km : 0,
+            })));
           }
         }
       } catch (err) {
@@ -192,7 +201,7 @@ export default function HomePage() {
     return businesses
       .filter((b) => {
         // Regra Inegociável 1: Apenas empresas APROVADAS aparecem na busca pública
-        if (b.status !== 'approved') return false;
+        if (b.status && b.status !== 'approved') return false;
 
         // Filtro por tipo (serviço / produto)
         if (selectedType !== 'all' && b.listing_type !== selectedType && b.listing_type !== 'both') {
@@ -208,16 +217,22 @@ export default function HomePage() {
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           const matchName = b.name.toLowerCase().includes(q);
-          const matchDesc = b.description.toLowerCase().includes(q);
-          const matchCat = b.category_name.toLowerCase().includes(q);
-          const matchNeigh = b.neighborhood.toLowerCase().includes(q);
+          const matchDesc = b.description?.toLowerCase().includes(q);
+          const matchCat = b.category_name?.toLowerCase().includes(q);
+          const matchNeigh = b.neighborhood?.toLowerCase().includes(q);
           if (!matchName && !matchDesc && !matchCat && !matchNeigh) {
             return false;
           }
         }
 
-        // Cálculo de distância física
-        const dist = calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude, b.longitude);
+        // Se for modalidade 100% online, não restringe por raio físico
+        if (b.service_mode === 'online') return true;
+
+        // Cálculo de distância física segura
+        const hasCoords = typeof b.latitude === 'number' && typeof b.longitude === 'number';
+        const dist = typeof b.distance_km === 'number'
+          ? b.distance_km
+          : (hasCoords ? calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude!, b.longitude!) : 0);
 
         // Regra Inegociável 6: Empresas cujo raio cobre o usuário OU estão no raio máximo
         if (b.service_mode === 'at_customer' || b.service_mode === 'both') {
@@ -227,10 +242,16 @@ export default function HomePage() {
 
         return dist <= maxDistanceKm;
       })
-      .map((b) => ({
-        ...b,
-        distance_km: calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude, b.longitude),
-      }))
+      .map((b) => {
+        const hasCoords = typeof b.latitude === 'number' && typeof b.longitude === 'number';
+        const dist = typeof b.distance_km === 'number'
+          ? b.distance_km
+          : (hasCoords ? calculateDistanceKm(userLocation.lat, userLocation.lng, b.latitude!, b.longitude!) : 0);
+        return {
+          ...b,
+          distance_km: dist,
+        };
+      })
       .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
   }, [businesses, userLocation, searchQuery, selectedCategory, selectedType, maxDistanceKm]);
 
