@@ -382,7 +382,9 @@ async def test_evolution_diagnostics(
             },
         }
 
-    base_url = settings.EVOLUTION_API_URL.rstrip("/")
+    base_url = settings.EVOLUTION_API_URL.strip().rstrip("/")
+    if base_url.endswith("/manager"):
+        base_url = base_url[:-8].rstrip("/")
     api_key = settings.EVOLUTION_API_KEY.strip()
     instance = settings.EVOLUTION_INSTANCE_NAME.strip()
     headers = {"apikey": api_key, "Content-Type": "application/json"}

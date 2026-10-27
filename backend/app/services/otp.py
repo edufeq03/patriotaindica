@@ -77,7 +77,10 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
     Compatível nativamente com Evolution API v1 e v2.
     """
     def __init__(self, base_url: str, api_key: str, instance_name: str):
-        self.base_url = base_url.rstrip("/")
+        cleaned_url = base_url.strip().rstrip("/")
+        if cleaned_url.endswith("/manager"):
+            cleaned_url = cleaned_url[:-8].rstrip("/")
+        self.base_url = cleaned_url
         self.api_key = api_key.strip()
         self.instance_name = instance_name.strip()
 
