@@ -56,6 +56,12 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   sparkles: <Sparkles className="w-4 h-4 text-amber-400" />,
 };
 
+const BRAZIL_STATES = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+  'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+  'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+];
+
 function formatWhatsAppUrl(whatsapp?: string, name?: string): string {
   if (!whatsapp) return '#';
   const clean = whatsapp.replace(/\D/g, '');
@@ -114,7 +120,7 @@ export default function HomePage() {
     document_number: '',
     whatsapp: '',
     neighborhood: '',
-    city: 'Campinas',
+    city: '',
     state: 'SP',
     service_mode: 'at_customer' as 'at_customer' | 'at_location' | 'both' | 'online',
     service_radius_km: 20,
@@ -314,10 +320,11 @@ export default function HomePage() {
 
       // Sucesso na gravação no PostgreSQL
       const createdId = data.business_id || `app-${Date.now()}`;
+      const cleanCity = applicationForm.city.trim() || 'cidade';
       const newApp: Business = {
         id: createdId,
         name: applicationForm.name,
-        slug: `${applicationForm.name.toLowerCase().replace(/\s+/g, '-')}-campinas`,
+        slug: `${applicationForm.name.toLowerCase().replace(/\s+/g, '-')}-${cleanCity.toLowerCase().replace(/\s+/g, '-')}`,
         description: applicationForm.description,
         listing_type: 'service',
         service_mode: applicationForm.service_mode,
@@ -326,8 +333,8 @@ export default function HomePage() {
         category_slug: applicationForm.category_slug,
         whatsapp: applicationForm.whatsapp,
         neighborhood: applicationForm.neighborhood,
-        city: applicationForm.city,
-        state: applicationForm.state,
+        city: applicationForm.city.trim() || 'Campinas',
+        state: (applicationForm.state.trim() || 'SP').toUpperCase(),
         show_full_address: false,
         latitude: userLocation.lat + (Math.random() - 0.5) * 0.02,
         longitude: userLocation.lng + (Math.random() - 0.5) * 0.02,
@@ -354,7 +361,7 @@ export default function HomePage() {
           document_number: '',
           whatsapp: '',
           neighborhood: '',
-          city: 'Campinas',
+          city: '',
           state: 'SP',
           service_mode: 'at_customer',
           service_radius_km: 20,
@@ -858,24 +865,50 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-300 font-medium mb-1">WhatsApp de Atendimento *</label>
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">WhatsApp de Atendimento *</label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="DDD + Número (ex: 19999998888)"
+                    value={applicationForm.whatsapp}
+                    onChange={(e) => setApplicationForm({ ...applicationForm, whatsapp: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-1">
+                    <label className="block text-slate-300 font-medium mb-1">Cidade *</label>
                     <input
                       required
                       type="text"
-                      placeholder="19999998888"
-                      value={applicationForm.whatsapp}
-                      onChange={(e) => setApplicationForm({ ...applicationForm, whatsapp: e.target.value })}
+                      placeholder="Ex: Campinas, Curitiba..."
+                      value={applicationForm.city}
+                      onChange={(e) => setApplicationForm({ ...applicationForm, city: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
                     />
                   </div>
-                  <div>
+                  <div className="sm:col-span-1">
+                    <label className="block text-slate-300 font-medium mb-1">Estado (UF) *</label>
+                    <select
+                      value={applicationForm.state}
+                      onChange={(e) => setApplicationForm({ ...applicationForm, state: e.target.value })}
+                      className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
+                    >
+                      {BRAZIL_STATES.map((uf) => (
+                        <option key={uf} value={uf}>
+                          {uf}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="sm:col-span-1">
                     <label className="block text-slate-300 font-medium mb-1">Bairro / Região *</label>
                     <input
                       required
                       type="text"
-                      placeholder="Ex: Cambuí, Barão Geraldo..."
+                      placeholder="Ex: Centro, Cambuí..."
                       value={applicationForm.neighborhood}
                       onChange={(e) => setApplicationForm({ ...applicationForm, neighborhood: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
