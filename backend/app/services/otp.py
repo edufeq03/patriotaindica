@@ -69,9 +69,68 @@ class MetaWhatsAppCloudProvider(WhatsAppProvider):
             return False
 
 
+class EvolutionWhatsAppProvider(WhatsAppProvider):
+    """
+    Provedor Evolution API (WhatsApp self-hosted via Baileys).
+    """
+    def __init__(self, base_url: str, api_key: str, instance_name: str):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.instance_name = instance_name
+
+    async def send_otp(self, phone: str, code: str, business_name: str) -> bool:
+        import httpx
+        clean_phone = "".join(filter(str.isdigit, phone))
+        if not clean_phone.startswith("55") and len(clean_phone) in (10, 11):
+            clean_phone = f"55{clean_phone}"
+
+        url = f"{self.base_url}/message/sendText/{self.instance_name}"
+        headers = {
+            "apikey": self.api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "number": clean_phone,
+            "text": (
+                f"🛡️ *Patriota Indica*\n\n"
+                f"Seu código de acesso para gerenciar *{business_name}* é:\n\n"
+                f"*🔑 {code}*\n\n"
+                f"_Válido por 5 minutos. Não compartilhe este código._"
+            ),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(url, json=payload, headers=headers)
+                if res.status_code in (200, 201):
+                    logger.info("WhatsApp enviado via Evolution API para %s com sucesso.", clean_phone)
+                    return True
+                logger.error("Evolution API retornou erro HTTP %s: %s", res.status_code, res.text)
+                return False
+        except Exception as e:
+            logger.error("Falha ao comunicar com Evolution API (%s): %s", url, e)
+            return False
+
+
+def get_default_provider() -> WhatsAppProvider:
+    from backend.app.core.config import settings
+
+    if settings.EVOLUTION_API_URL and settings.EVOLUTION_API_KEY and settings.EVOLUTION_INSTANCE_NAME:
+        logger.info(
+            "Evolution WhatsApp Provider inicializado na URL: %s (Instância: %s)",
+            settings.EVOLUTION_API_URL,
+            settings.EVOLUTION_INSTANCE_NAME,
+        )
+        return EvolutionWhatsAppProvider(
+            base_url=settings.EVOLUTION_API_URL,
+            api_key=settings.EVOLUTION_API_KEY,
+            instance_name=settings.EVOLUTION_INSTANCE_NAME,
+        )
+    return ConsoleWhatsAppProvider()
+
+
 class OTPService:
     def __init__(self, provider: WhatsAppProvider = None):
-        self.provider = provider or ConsoleWhatsAppProvider()
+        self.provider = provider or get_default_provider()
         # Armazenamento em memória com TTL (pode ser conectado a Redis em escala)
         self._cache: Dict[str, Dict] = {}
         self._rate_limits: Dict[str, list] = {}

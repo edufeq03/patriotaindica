@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
 
+    # Evolution WhatsApp API (Opcional - integração pronta)
+    EVOLUTION_API_URL: Optional[str] = None
+    EVOLUTION_API_KEY: Optional[str] = None
+    EVOLUTION_INSTANCE_NAME: Optional[str] = None
+
     # CORS - M1: Restringir origens válidas sem curinga em produção
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

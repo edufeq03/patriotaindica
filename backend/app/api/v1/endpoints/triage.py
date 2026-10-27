@@ -318,3 +318,35 @@ async def apply_triage_decision(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro no banco ao salvar decisão ({exc.__class__.__name__}): {str(exc)}",
         )
+
+
+@router.post("/reset-businesses")
+async def reset_businesses(
+    secret_key: str = Query(..., description="Chave de segurança ou 'reset_patriotaindica_2026'"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Limpa todas as empresas cadastradas no banco de dados para iniciar a divulgação oficial.
+    Preserva usuários (admin/proprietários) e categorias oficiais.
+    """
+    from sqlalchemy import text
+
+    if secret_key != settings.JWT_SECRET_KEY and secret_key != "reset_patriotaindica_2026":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chave de segurança inválida para resetar empresas.",
+        )
+
+    try:
+        await db.execute(text("TRUNCATE TABLE businesses CASCADE;"))
+        await db.commit()
+        logger.warning("ATENÇÃO: Todas as empresas foram resetadas do banco de dados via endpoint de manutenção.")
+        return {
+            "success": True,
+            "message": "Banco de dados de empresas resetado com sucesso! A vitrine está limpa e pronta para os cadastros oficiais.",
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Erro ao resetar banco de empresas: %s", e)
+        raise HTTPException(status_code=500, detail=f"Erro ao resetar: {str(e)}")
+
