@@ -1151,7 +1151,7 @@ export default function AdminDashboardPage() {
                             className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md shadow-emerald-950/50 transition-all flex items-center gap-1.5"
                           >
                             <CheckCircle2 className="w-4 h-4" />
-                            Aprovar Cadastro
+                            {selectedBusiness.status === 'approved' ? 'Já Aprovada (Salvar Selo)' : 'Aprovar Cadastro'}
                           </button>
                         </div>
                       </div>

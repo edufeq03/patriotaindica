@@ -22,10 +22,10 @@ router = APIRouter()
 
 # Máquina de Estados Válida para Triagem (Item M7 do Relatório)
 VALID_TRANSITIONS: Dict[str, set] = {
-    "pending_review": {"approved", "needs_info", "rejected"},
-    "needs_info": {"pending_review", "rejected", "approved"},
-    "approved": {"suspended"},
-    "suspended": {"approved", "archived"},
+    "pending_review": {"approved", "needs_info", "rejected", "pending_review"},
+    "needs_info": {"pending_review", "rejected", "approved", "needs_info"},
+    "approved": {"suspended", "rejected", "approved"},
+    "suspended": {"approved", "archived", "rejected", "suspended"},
     "rejected": set(),  # Registro rejeitado não pode ser diretamente reaprovado sem nova candidatura
     "archived": set(),
 }
@@ -230,6 +230,22 @@ async def apply_triage_decision(
         new_status = target_status_map.get(payload.action)
         if not new_status:
             raise HTTPException(status_code=400, detail="Ação de triagem inválida.")
+
+        # Idempotência: Se já está no status desejado (ex: já aprovada), apenas atualiza selo e nota sem erro
+        if old_status == new_status:
+            if payload.is_verified is not None:
+                business.is_verified = payload.is_verified
+            if payload.note:
+                business.rejection_reason = payload.note
+            await db.commit()
+            await db.refresh(business)
+            return {
+                "success": True,
+                "business_id": business.id,
+                "status": business.status,
+                "is_verified": business.is_verified,
+                "message": f"Empresa já estava com status '{new_status}'. Dados e selo atualizados com sucesso.",
+            }
 
         # Validação da máquina de estados (M7)
         allowed_transitions = VALID_TRANSITIONS.get(old_status, set())
