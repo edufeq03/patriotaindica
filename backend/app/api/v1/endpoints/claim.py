@@ -70,12 +70,15 @@ async def request_otp_by_phone(
         status_code = status.HTTP_429_TOO_MANY_REQUESTS if "Limite" in message else status.HTTP_500_INTERNAL_SERVER_ERROR
         raise HTTPException(status_code=status_code, detail=message)
 
+    dev_code = otp_service.get_dev_code(str(target_business.id))
+
     return {
         "success": True,
         "message": message,
         "business_id": str(target_business.id),
         "business_name": target_business.name,
         "masked_phone": otp_service.mask_phone(target_business.whatsapp),
+        "dev_code": dev_code,
         "expires_in_seconds": 300,
     }
 
@@ -87,7 +90,7 @@ async def request_claim_otp(
 ):
     """
     Dispara o envio de código OTP via WhatsApp oficial cadastrado da empresa.
-    SEGURANÇA (C4): O código NUNCA é retornado no corpo da resposta HTTP.
+    SEGURANÇA (C4): O código oficial NUNCA é retornado no corpo da resposta HTTP.
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -108,10 +111,13 @@ async def request_claim_otp(
         status_code = status.HTTP_429_TOO_MANY_REQUESTS if "Limite" in message else status.HTTP_500_INTERNAL_SERVER_ERROR
         raise HTTPException(status_code=status_code, detail=message)
 
+    dev_code = otp_service.get_dev_code(str(business.id))
+
     return {
         "success": True,
         "message": message,
         "masked_phone": otp_service.mask_phone(business.whatsapp),
+        "dev_code": dev_code,
         "expires_in_seconds": 300,
     }
 

@@ -67,6 +67,9 @@ export default function BusinessProfileView({ business, city, category, slug }: 
       const data = await res.json().catch(() => null);
       if (res.ok) {
         setMaskedPhone(data?.masked_phone || '');
+        if (data?.dev_code) {
+          setOtpCode(data.dev_code);
+        }
         setClaimStep('otp');
       } else {
         setOtpError(data?.detail || 'Falha ao solicitar código de confirmação.');
@@ -91,6 +94,14 @@ export default function BusinessProfileView({ business, city, category, slug }: 
       });
       const data = await res.json().catch(() => null);
       if (res.ok) {
+        if (data?.access_token) {
+          const newSession = {
+            token: data.access_token,
+            user: data.user,
+          };
+          sessionStorage.setItem('patriotaindica_owner_session', JSON.stringify(newSession));
+          document.cookie = `owner_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
+        }
         setClaimStep('success');
       } else {
         setOtpError(data?.detail || 'Código de confirmação incorreto.');

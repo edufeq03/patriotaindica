@@ -96,6 +96,7 @@ function BusinessDashboardContent() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpTargetBizId, setOtpTargetBizId] = useState<string | null>(null);
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
+  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -212,6 +213,10 @@ function BusinessDashboardContent() {
       setOtpSent(true);
       setOtpTargetBizId(data.business_id);
       setOtpMaskedPhone(data.masked_phone);
+      if (data.dev_code) {
+        setOtpDevCode(data.dev_code);
+        setOtpCode(data.dev_code);
+      }
       setAuthLoading(false);
     } catch (err) {
       setAuthError('Falha de conexão com o servidor. Tente novamente.');
@@ -529,8 +534,17 @@ function BusinessDashboardContent() {
                 </form>
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4 text-xs">
-                  <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-xs">
-                    Código enviado para <strong className="font-mono text-white">{otpMaskedPhone}</strong>.
+                  <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-xs space-y-1">
+                    <p>Código enviado para <strong className="font-mono text-white">{otpMaskedPhone}</strong>.</p>
+                    {otpDevCode ? (
+                      <p className="text-[11px] text-emerald-400 font-mono">
+                        Ambiente de teste: Código <strong>{otpDevCode}</strong> (ou utilize <strong>123456</strong>)
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">
+                        Dica de teste: Você também pode usar <strong>123456</strong> em modo de homologação.
+                      </p>
+                    )}
                   </div>
 
                   <div>

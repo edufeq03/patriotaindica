@@ -98,9 +98,9 @@ class OTPService:
     async def request_otp(self, business_id: str, phone: str, business_name: str) -> Tuple[bool, str]:
         phone_key = f"claim:{business_id}"
 
-        # 1. Checa limite de envio (3 por hora)
-        if not self.check_rate_limit(phone_key, limit=3, window_seconds=3600):
-            return False, "Limite de envios excedido para este número. Tente novamente em 1 hora."
+        # 1. Checa limite de envio (5 por hora)
+        if not self.check_rate_limit(phone_key, limit=5, window_seconds=3600):
+            return False, "Limite de envios excedido para este número. Tente novamente em alguns minutos."
 
         # 2. Gera 6 dígitos aleatórios criptograficamente seguros
         raw_code = f"{secrets.randbelow(900000) + 100000}"
@@ -108,19 +108,27 @@ class OTPService:
         hashed = self._hash_code(raw_code, salt)
 
         # 3. Armazena apenas o HASH com TTL de 300 segundos (5 min)
+        # raw_code só fica salvo temporariamente em memória se o provedor for Console (dev/homologação)
         self._cache[phone_key] = {
             "hash": hashed,
             "salt": salt,
+            "raw_code": raw_code if isinstance(self.provider, ConsoleWhatsAppProvider) else None,
             "attempts": 0,
             "expires_at": time.time() + 300,
         }
 
-        # 4. Despacha via provedor de WhatsApp (NUNCA expõe o código na resposta da API)
+        # 4. Despacha via provedor de WhatsApp (NUNCA expõe o código em produção oficial)
         sent = await self.provider.send_otp(phone, raw_code, business_name)
         if not sent:
             return False, "Não foi possível enviar a mensagem no WhatsApp. Tente novamente."
 
         return True, "Código enviado com sucesso via WhatsApp."
+
+    def get_dev_code(self, business_id: str) -> Optional[str]:
+        """Retorna o código gerado apenas quando em modo ConsoleWhatsAppProvider."""
+        if isinstance(self.provider, ConsoleWhatsAppProvider):
+            return self._cache.get(f"claim:{business_id}", {}).get("raw_code")
+        return None
 
     def verify_otp(self, business_id: str, submitted_code: str) -> Tuple[bool, str]:
         phone_key = f"claim:{business_id}"
@@ -143,7 +151,9 @@ class OTPService:
         submitted_hash = self._hash_code(submitted_code.strip(), record["salt"])
 
         # Comparação em tempo constante para evitar timing attacks
-        if secrets.compare_digest(expected_hash, submitted_hash):
+        # Se for provedor Console/Homologação, também aceita 123456 como código universal de teste
+        is_console = isinstance(self.provider, ConsoleWhatsAppProvider)
+        if secrets.compare_digest(expected_hash, submitted_hash) or (is_console and submitted_code.strip() == "123456"):
             del self._cache[phone_key]
             return True, "Código validado com sucesso!"
 
