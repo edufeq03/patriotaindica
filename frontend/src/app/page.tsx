@@ -84,7 +84,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<ListingType | 'all'>('all');
-  const [maxDistanceKm, setMaxDistanceKm] = useState<number>(50);
+  const [maxDistanceKm, setMaxDistanceKm] = useState<number | null>(null);
 
   // Ref e função para rolagem horizontal das categorias
   const categoriesRef = useRef<HTMLDivElement>(null);
@@ -231,8 +231,11 @@ export default function HomePage() {
           }
         }
 
-        // Se for modalidade 100% online, não restringe por raio físico
-        if (b.service_mode === 'online') return true;
+        // Se for modalidade 100% online ou se não houver filtro de raio (padrão Brasil), exibe
+        if (b.service_mode === 'online' || maxDistanceKm === null) return true;
+
+        // Se o usuário digitou uma busca textual, não restringe por raio físico
+        if (searchQuery.trim()) return true;
 
         // Cálculo de distância física segura
         const hasCoords = typeof b.latitude === 'number' && typeof b.longitude === 'number';
@@ -513,9 +516,21 @@ export default function HomePage() {
               <div className="flex items-center gap-1.5 text-slate-400">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
                 <span>Raio:</span>
-                {[5, 15, 30, 50].map((km) => (
+                <button
+                  type="button"
+                  onClick={() => setMaxDistanceKm(null)}
+                  className={`px-2.5 py-1 rounded-lg transition-colors font-medium ${
+                    maxDistanceKm === null
+                      ? 'bg-amber-950/80 text-amber-300 border border-amber-500/60 shadow-sm'
+                      : 'bg-[#070b0e] text-slate-400 hover:text-white border border-[#182836]'
+                  }`}
+                >
+                  Brasil
+                </button>
+                {[15, 30, 50, 100].map((km) => (
                   <button
                     key={km}
+                    type="button"
                     onClick={() => setMaxDistanceKm(km)}
                     className={`px-2.5 py-1 rounded-lg transition-colors font-medium ${
                       maxDistanceKm === km
@@ -771,7 +786,7 @@ export default function HomePage() {
               onClick={() => {
                 setSelectedCategory(null);
                 setSearchQuery('');
-                setMaxDistanceKm(50);
+                setMaxDistanceKm(null);
               }}
               className="px-4 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-xs text-amber-300"
             >
