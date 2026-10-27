@@ -10,10 +10,15 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import ENUM, TSVECTOR, UUID
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geography
 from backend.app.core.database import Base
+
+listing_type_enum = ENUM("service", "product", "both", name="listing_type", create_type=False)
+service_mode_enum = ENUM("at_location", "at_customer", "both", "online", name="service_mode", create_type=False)
+business_status_enum = ENUM("draft", "pending_review", "needs_info", "approved", "rejected", "suspended", name="business_status", create_type=False)
+business_source_enum = ENUM("seeded", "invited", "application", "claimed", name="business_source", create_type=False)
 
 
 class Business(Base):
@@ -24,7 +29,7 @@ class Business(Base):
     name = Column(String(150), nullable=False)
     slug = Column(String(180), unique=True, nullable=False, index=True)
     description = Column(Text, nullable=True)
-    listing_type = Column(String(20), nullable=False, default="service")  # 'service', 'product', 'both'
+    listing_type = Column(listing_type_enum, nullable=False, default="service")  # 'service', 'product', 'both'
 
     # Identificação interna (LGPD)
     document_type = Column(String(4), nullable=True)  # 'CNPJ' ou 'CPF'
@@ -50,7 +55,7 @@ class Business(Base):
     location = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     geocode_source = Column(String(50), nullable=True)
     geocode_confidence = Column(Float, nullable=True)
-    service_mode = Column(String(20), nullable=False, default="at_location")  # 'at_location', 'at_customer', 'both', 'online'
+    service_mode = Column(service_mode_enum, nullable=False, default="at_location")  # 'at_location', 'at_customer', 'both', 'online'
     service_radius_km = Column(Integer, nullable=True)
 
     # Mídia
@@ -58,8 +63,8 @@ class Business(Base):
     banner_url = Column(Text, nullable=True)
 
     # Curadoria / Triagem
-    status = Column(String(20), nullable=False, default="pending_review", index=True)
-    source = Column(String(20), nullable=False, default="application")
+    status = Column(business_status_enum, nullable=False, default="pending_review", index=True)
+    source = Column(business_source_enum, nullable=False, default="application")
     is_verified = Column(Boolean, nullable=False, default=False)
     rejection_reason = Column(Text, nullable=True)
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

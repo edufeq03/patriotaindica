@@ -1,8 +1,10 @@
 import uuid
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import ENUM, UUID
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
+
+listing_type_enum = ENUM("service", "product", "both", name="listing_type", create_type=False)
 
 
 class Category(Base):
@@ -12,7 +14,7 @@ class Category(Base):
     parent_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
     name = Column(String(100), unique=True, nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)
-    kind = Column(String(20), nullable=False, default="both")  # 'service', 'product', 'both'
+    kind = Column(listing_type_enum, nullable=False, default="both")  # 'service', 'product', 'both'
     icon_name = Column(String(50), nullable=True)
     display_order = Column(Integer, nullable=False, default=0)
     status = Column(String(20), nullable=False, default="approved")  # 'approved', 'pending', 'rejected'

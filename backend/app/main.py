@@ -76,6 +76,22 @@ async def apply_runtime_migrations():
                     ALTER TABLE businesses ALTER COLUMN location DROP NOT NULL;
                 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
+                DO $$ BEGIN
+                    CREATE CAST (varchar AS listing_type) WITH INOUT AS IMPLICIT;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+                DO $$ BEGIN
+                    CREATE CAST (varchar AS service_mode) WITH INOUT AS IMPLICIT;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+                DO $$ BEGIN
+                    CREATE CAST (varchar AS business_status) WITH INOUT AS IMPLICIT;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+                DO $$ BEGIN
+                    CREATE CAST (varchar AS business_source) WITH INOUT AS IMPLICIT;
+                EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
                 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS geocode_source VARCHAR(50);
                 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS geocode_confidence FLOAT;
 

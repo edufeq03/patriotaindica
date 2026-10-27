@@ -101,3 +101,43 @@ def test_application_submit_success_with_mock_db():
     finally:
         app.dependency_overrides.pop(get_db, None)
 
+
+def test_enum_compilation_no_varchar_cast():
+    """Garante que colunas com PostgreSQL ENUM não recebam typecast ::VARCHAR indevido."""
+    import sqlalchemy as sa
+    from sqlalchemy.dialects.postgresql import insert
+    from backend.app.models.business import Business
+    from backend.app.models.category import Category
+    from backend.app.models.events import BusinessReviewLog
+
+    stmt = insert(Business).values(
+        name="Teste",
+        slug="teste-slug",
+        whatsapp="19999999999",
+        neighborhood="Centro",
+        city="Campinas",
+        state="SP",
+        listing_type="service",
+        service_mode="at_customer",
+        status="pending_review",
+        source="application",
+    )
+    compiled = str(stmt.compile(dialect=sa.dialects.postgresql.dialect()))
+    assert "listing_type)s::VARCHAR" not in compiled
+    assert "service_mode)s::VARCHAR" not in compiled
+    assert "status)s::VARCHAR" not in compiled
+    assert "source)s::VARCHAR" not in compiled
+
+    stmt_cat = insert(Category).values(name="Cat", slug="cat", kind="service")
+    assert "kind)s::VARCHAR" not in str(stmt_cat.compile(dialect=sa.dialects.postgresql.dialect()))
+
+    stmt_log = insert(BusinessReviewLog).values(
+        business_id="00000000-0000-0000-0000-000000000000",
+        from_status="pending_review",
+        to_status="approved",
+    )
+    compiled_log = str(stmt_log.compile(dialect=sa.dialects.postgresql.dialect()))
+    assert "from_status)s::VARCHAR" not in compiled_log
+    assert "to_status)s::VARCHAR" not in compiled_log
+
+

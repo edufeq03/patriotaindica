@@ -1,8 +1,10 @@
 import uuid
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
+
+business_status_enum = ENUM("draft", "pending_review", "needs_info", "approved", "rejected", "suspended", name="business_status", create_type=False)
 
 
 class BusinessReviewLog(Base):
@@ -10,8 +12,8 @@ class BusinessReviewLog(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
-    from_status = Column(String(20), nullable=True)
-    to_status = Column(String(20), nullable=False)
+    from_status = Column(business_status_enum, nullable=True)
+    to_status = Column(business_status_enum, nullable=False)
     note = Column(Text, nullable=True)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
