@@ -658,6 +658,20 @@ export default function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredBusinesses.map((business) => {
             const isCustomerService = business.service_mode === 'at_customer' || business.service_mode === 'both';
+            const cityParam = (business.city || 'brasil')
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
+            const stateParam = (business.state || 'br').toLowerCase();
+            const catParam = (business.category_slug || 'servicos')
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
+            const profileUrl = `/${cityParam}-${stateParam}/${catParam}/${business.slug}`;
 
             return (
               <div
@@ -667,26 +681,28 @@ export default function HomePage() {
                 {/* Imagem / Header do Card */}
                 <div>
                   <div className="relative h-44 w-full bg-[#070b0e] overflow-hidden">
-                    {business.banner_url ? (
-                      <div
-                        className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                        style={{ backgroundImage: `url(${business.banner_url})` }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-[#0d151c] text-slate-600">
-                        <Building2 className="w-12 h-12" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0d151c] via-[#0d151c]/30 to-transparent" />
+                    <Link href={profileUrl} className="block w-full h-full">
+                      {business.banner_url ? (
+                        <div
+                          className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
+                          style={{ backgroundImage: `url(${business.banner_url})` }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-[#0d151c] text-slate-600">
+                          <Building2 className="w-12 h-12" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0d151c] via-[#0d151c]/30 to-transparent" />
+                    </Link>
 
                     {/* Badges superiores */}
-                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 pointer-events-none">
                       <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#070b0e]/90 text-emerald-300 border border-emerald-500/30 backdrop-blur-md">
                         {business.category_name}
                       </span>
                     </div>
 
-                    <div className="absolute top-3 right-3 flex items-center gap-1">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
                       {business.accepted_manifesto && (
                         <span 
                           onClick={(e) => {
@@ -730,9 +746,11 @@ export default function HomePage() {
                       )}
                     </div>
 
-                    <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1">
-                      {business.name}
-                    </h3>
+                    <Link href={profileUrl}>
+                      <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1 cursor-pointer">
+                        {business.name}
+                      </h3>
+                    </Link>
 
                     <p className="text-xs text-slate-400 flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
@@ -761,7 +779,7 @@ export default function HomePage() {
                   </a>
 
                   <Link
-                    href={`/${business.city.toLowerCase()}-${business.state.toLowerCase()}/${business.category_slug}/${business.slug}`}
+                    href={profileUrl}
                     className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-slate-400 hover:text-amber-300 transition-colors"
                   >
                     Ver perfil completo e detalhes

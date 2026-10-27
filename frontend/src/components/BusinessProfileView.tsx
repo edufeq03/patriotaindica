@@ -402,7 +402,7 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                 <div className="p-4 rounded-xl bg-[#070b0e] border border-[#182836] space-y-2">
                   <span className="text-slate-400">Número de WhatsApp cadastrado:</span>
                   <p className="font-mono text-sm text-emerald-400 font-bold">
-                    +55 {business.whatsapp.slice(0, 2)} *****-{business.whatsapp.slice(-4)}
+                    +55 {(business.whatsapp || '').slice(0, 2)} *****-{(business.whatsapp || '').slice(-4)}
                   </p>
                   <p className="text-[11px] text-slate-500">
                     Você deve ter acesso a esta linha para receber o código de 6 dígitos.
