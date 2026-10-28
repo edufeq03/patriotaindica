@@ -554,14 +554,6 @@ export default function HomePage() {
               <span>Planos do Clube</span>
             </a>
 
-            {/* Link direto para a Central de Triagem (Etapa 3) */}
-            <Link
-              href="/admin"
-              className="text-xs px-3 py-1.5 rounded-xl border border-blue-900/60 hover:border-blue-700 bg-blue-950/40 text-blue-300 hover:text-white transition-all flex items-center gap-1.5 shadow-sm"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline">Admin</span>
-            </Link>
 
             <button
               onClick={() => setShowApplicationModal(true)}
@@ -1845,7 +1837,6 @@ export default function HomePage() {
             <Link href="/termos" className="hover:text-amber-300">Termos de Uso</Link>
             <Link href="/privacidade" className="hover:text-amber-300">Política de Privacidade (LGPD)</Link>
             <Link href="/painel-empresa" className="text-amber-400 hover:underline">Painel da Empresa</Link>
-            <Link href="/admin" className="text-blue-400 hover:underline">Central do Administrador</Link>
           </div>
         </div>
       </footer>

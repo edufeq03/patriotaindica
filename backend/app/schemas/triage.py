@@ -31,8 +31,19 @@ class UserOut(UserBase):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
-    user: UserOut
+    user: Optional[UserOut] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+    model_config = ConfigDict(extra="forbid")
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
 
 
 # Triagem e Ações Administrativas

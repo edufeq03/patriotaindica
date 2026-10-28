@@ -124,6 +124,22 @@ function BusinessDashboardContent() {
     return null;
   });
 
+  // T2.1: Sincronização automática com sessão HttpOnly do BFF
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated && (data.user?.role === 'owner' || data.user?.role === 'admin')) {
+          const newSession = {
+            token: 'cookie_session',
+            user: data.user,
+          };
+          setSession(newSession);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Estado do Login
   const [loginTab, setLoginTab] = useState<'whatsapp' | 'email'>('whatsapp');
   const [whatsappPhone, setWhatsappPhone] = useState(() => searchParams?.get('phone') || '');
@@ -354,13 +370,22 @@ function BusinessDashboardContent() {
         return;
       }
 
+      // Sincroniza sessão no cookie HttpOnly via BFF
+      await fetch('/api/auth/otp-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+        }),
+      }).catch(() => {});
+
       const newSession = {
-        token: data.access_token,
+        token: 'cookie_session',
         user: data.user,
       };
 
       sessionStorage.setItem('patriotaindica_owner_session', JSON.stringify(newSession));
-      document.cookie = `owner_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
       setSession(newSession);
       setAuthLoading(false);
     } catch (err) {
@@ -376,25 +401,24 @@ function BusinessDashboardContent() {
     setAuthError(null);
 
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', loginEmail.trim().toLowerCase());
-      formData.append('password', loginPassword);
-
-      const res = await fetch('/api/v1/auth/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+        }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setAuthError(data.detail || 'E-mail ou senha incorretos.');
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        setAuthError(data?.detail || 'E-mail ou senha incorretos.');
         setAuthLoading(false);
         return;
       }
 
       const newSession = {
-        token: data.access_token,
+        token: 'cookie_session',
         user: {
           id: data.user.id,
           name: data.user.name,
@@ -404,7 +428,6 @@ function BusinessDashboardContent() {
       };
 
       sessionStorage.setItem('patriotaindica_owner_session', JSON.stringify(newSession));
-      document.cookie = `owner_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
       setSession(newSession);
       setAuthLoading(false);
     } catch (err) {
@@ -414,9 +437,11 @@ function BusinessDashboardContent() {
   };
 
   // Logout
-  const handleLogout = () => {
-    sessionStorage.removeItem('patriotaindica_owner_session');
-    document.cookie = 'owner_session=; path=/; max-age=0';
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('patriotaindica_owner_session');
+    }
     setSession(null);
     setBusinesses([]);
     setOtpSent(false);

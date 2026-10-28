@@ -6,15 +6,29 @@ from fastapi.responses import JSONResponse
 from backend.app.api.v1.api import api_router
 from backend.app.core.config import settings
 
+from contextlib import asynccontextmanager
+from backend.app.core.redis_client import close_redis_pool, init_redis_pool
+
 logger = logging.getLogger("patriotaindica")
 
 # H7: Em ambiente de produção estrito, desabilitar docs_url, redoc_url e openapi_url
 is_prod = (settings.ENVIRONMENT == "production" and not settings.DEBUG)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: inicializa pool persistente do Redis
+    await init_redis_pool()
+    yield
+    # Shutdown: encerra conexões
+    await close_redis_pool()
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Backend API do Marketplace Local Curado de Serviços e Produtos",
     version="2.0.0",
+    lifespan=lifespan,
     docs_url=None if is_prod else "/docs",
     redoc_url=None if is_prod else "/redoc",
     openapi_url=None if is_prod else "/openapi.json",

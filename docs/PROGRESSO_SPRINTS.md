@@ -2,7 +2,6 @@
 
 > **Data da última atualização**: 28 de Outubro de 2026  
 > **Branch**: `main`  
-> **Último Commit**: `f44c6da` (feat(security): implementa Sprint 1 - identidade e curadoria à prova de burla (T1.1 a T1.7))  
 > **Status Remoto**: Atualizado e sincronizado com `origin/main` no GitHub.
 
 ---
@@ -13,12 +12,12 @@
 | :--- | :--- | :---: | :--- |
 | **Sprint 0** | Estancar o sangramento (Vulnerabilidades críticas K1, K2, K5, K6, K7, H4, H5, H11) | ✅ Concluída | 53 testes passando (`backend/tests/test_sprint0.py`) |
 | **Sprint 1** | Identidade e curadoria à prova de burla (K3, K4, H2, H3, H6, H7, H10, M3) | ✅ Concluída | 66 testes passando (`backend/tests/test_sprint1.py`) |
-| **Sprint 2** | Sessão, borda e infraestrutura (H1, H9, M1, M5, M6, M7, M12) | ⏳ **A INICIAR** | Próximo passo após religar |
-| **Sprint 3** | Busca por proximidade e núcleo do produto | ⏸️ Planejada | Depende da Sprint 2 |
+| **Sprint 2** | Sessão, borda e infraestrutura (H1, H9, M1, M5, M6, M7, M12) | ✅ Concluída | 72 testes passando (`backend/tests/test_sprint2.py`) + `npm run build` OK |
+| **Sprint 3** | Busca por proximidade e núcleo do produto | ⏳ **A INICIAR** | Próxima sprint |
 | **Sprint 4** | Cobrança consistente e valor pago | ⏸️ Planejada | Depende da Sprint 3 |
 | **Sprint 5** | Bot de orçamento no WhatsApp oficial (Cloud API) | ⏸️ Planejada | Depende da Sprint 4 |
 | **Sprint 6** | Redesenho UX e conversão | ⏸️ Planejada | Depende da Sprint 5 |
-| **Sprint 7** | Operação, CI/CD, backup e auditoria pré-lançamento | ⏸️ Planejada | Encerramento |
+| **Sprint 7** | Operação, CI/CD, backup e auditoria pré-lançamento | ⏸️ Planejada | (Base de backup & homologação já adiantada) |
 
 ---
 
@@ -63,42 +62,41 @@
   - Consumo atômico `UPDATE invitations ... RETURNING` contra race conditions.
   - Vinculação de dono sem conceder selo `is_verified` automático.
 
+### Operação Prévia (Backup e Homologação)
+- [scripts/backup_postgres.sh](file:///home/capella/dev/antigravity/patriotaindica/scripts/backup_postgres.sh): backup diário criptografado com AES-256 e hash SHA-256, auto-detecção de container Docker/Easypanel e suporte a Rclone.
+- [scripts/restore_postgres.sh](file:///home/capella/dev/antigravity/patriotaindica/scripts/restore_postgres.sh): restauração com validação de integridade.
+- [.env.staging.example](file:///home/capella/dev/antigravity/patriotaindica/.env.staging.example): template de variáveis para ambiente de homologação isolado.
+- [database/scripts/anonymize_for_staging.sql](file:///home/capella/dev/antigravity/patriotaindica/database/scripts/anonymize_for_staging.sql): sanitização de PII para homologação conforme a LGPD.
+- [docs/GUIA_BACKUP_E_HOMOLOGACAO.md](file:///home/capella/dev/antigravity/patriotaindica/docs/GUIA_BACKUP_E_HOMOLOGACAO.md): manual operacional.
+
+### Sprint 2 — Sessão, Borda e Infraestrutura
+- **T2.1: Sessão Segura e BFF (Backend-For-Frontend)**:
+  - Implementado pool persistente de conexões Redis (`redis_client.py`) no lifespan do FastAPI.
+  - Emissão de par rotativo: Access Token (15 min) + Refresh Token rotativo (7 dias) com ID único `jti` persistido no Redis.
+  - Endpoint `POST /api/v1/auth/refresh` com rotação atômica de refresh token e proteção contra replay attacks.
+  - Endpoint `POST /api/v1/auth/logout` com revogação explícita de `jti`.
+  - Rotas BFF no Next.js (`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/me`, `/api/auth/otp-session`) gerenciando cookies `HttpOnly; Secure; SameSite=Strict; Path=/`.
+  - Eliminados todos os usos de `document.cookie` e armazenamento de JWT em `sessionStorage` no frontend.
+- **T2.2: Middleware Next.js & CSP**:
+  - Middleware do Next.js validando criptograficamente assinaturas JWT com a biblioteca `jose` no Edge Runtime.
+  - Proteção de rotas `/admin` (exige `role=admin`) e `/painel-empresa` (exige `role in [owner, admin]`).
+  - Injeção transparente do header `Authorization: Bearer <token>` nas requisições do frontend para a API (`/api/v1/*`).
+  - Cabeçalhos defensivos padrão OWASP e Content Security Policy (CSP) com bloqueio de `object-src 'none'`, `frame-ancestors 'none'`, etc.
+  - Removidos links públicos de navegação para `/admin` na landing page.
+- **T2.3: Rate Limit Confiável & Infra**:
+  - `get_client_ip`: detecção protegida priorizando `CF-Connecting-IP` (Cloudflare) e validação de `X-Forwarded-For` com `TRUSTED_PROXY_HOPS` contra IP spoofing.
+  - Rate limit com script Lua atômico no Redis (`INCR` + `EXPIRE`).
+  - Suporte a `fail_closed=True` (HTTP 503) em endpoints críticos de autenticação caso o Redis fique inoperante em produção.
+
 ---
 
-## 3. Onde Continuar Depois (Sprint 2 - Imediata)
+## 3. Próximo Passo: Sprint 3 (Busca por Proximidade e Núcleo do Produto)
 
-Ao religar o computador, você pode dizer simplesmente:
-> *"Pode continuar com a Sprint 2."*
-
-### Tarefas da Sprint 2 — Sessão, Borda e Infraestrutura:
-1. **T2.1: Sessão Segura (BFF no Next.js)**:
-   - Eliminar `sessionStorage` e `document.cookie` inseguros com tokens JWT no JavaScript do frontend.
-   - Criar rotas BFF no Next.js (`/api/auth/*`) emitindo cookies `HttpOnly`, `Secure` e `SameSite=Strict`.
-   - Access token curto (15 min) + refresh token rotativo no Redis com lista de revogação (`jti`).
-2. **T2.2: Middleware e CSP de Verdade**:
-   - Atualizar `middleware.ts` para validar JWT e role via biblioteca `jose`, protegendo rotas `/admin` e `/painel-empresa`.
-   - Implementar cabeçalho Content Security Policy (CSP) com nonce dinâmico por requisição (sem `unsafe-inline`), bloqueando `object-src 'none'`, `base-uri 'self'`.
-   - Ocultar links públicos para `/admin`.
-3. **T2.3: Rate Limit Confiável e Infra**:
-   - `get_client_ip`: não confiar cegamente no primeiro item de `X-Forwarded-For`. Implementar `TRUSTED_PROXY_HOPS` e validação de peers de proxy.
-   - Redis com cliente persistente único via lifespan FastAPI (sem abrir e fechar conexões a cada requisição).
-   - Operações `INCR` + `EXPIRE` em pipeline atômico.
-   - Fail-closed (HTTP 503) em endpoints críticos (login, OTP, cadastro) caso o Redis fique inoperante.
-
----
-
-## 4. Comandos Úteis de Verificação ao Ligar
-
-Para conferir o estado do projeto no terminal:
-
-```bash
-# 1. Verificar histórico do Git
-git status
-git log -n 2
-
-# 2. Executar suíte de testes (66 testes verdes)
-PYTHONPATH=. backend/venv/bin/pytest backend/tests
-
-# 3. Testar build do frontend
-cd frontend && npm run build
-```
+Tarefas planejadas:
+1. **T3.1: PostGIS Real e Busca por Raio**:
+   - Conversão de consultas de proximidade para operadores nativos PostGIS (`ST_DWithin`, `ST_Distance`).
+   - Índice espacial GiST em `businesses.location_point`.
+2. **T3.2: Geocodificação Segura de Endereços**:
+   - Geocodificação via Nominatim / BrasilAPI com cache de coordenadas no Redis.
+3. **T3.3: Filtros por Modo de Atendimento**:
+   - Suporte estrito a `at_location`, `at_customer`, `online` na busca e paginação.

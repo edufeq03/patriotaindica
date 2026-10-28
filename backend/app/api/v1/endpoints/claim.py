@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings
 from backend.app.core.database import get_db, set_db_app_context
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
-from backend.app.core.security import create_access_token, get_password_hash
+from backend.app.core.redis_client import store_refresh_token
+from backend.app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    get_password_hash,
+)
 from backend.app.models.business import Business
 from backend.app.models.user import User
 from backend.app.services.otp import hash_phone, normalize_e164, otp_service
@@ -195,11 +200,17 @@ async def verify_otp_by_phone(
         role=owner_user.role,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    refresh_token, jti, ttl_sec = create_refresh_token(
+        subject=owner_user.id,
+        role=owner_user.role,
+    )
+    await store_refresh_token(jti=jti, user_id=str(owner_user.id), ttl_seconds=ttl_sec)
 
     return {
         "success": True,
         "message": "Identidade confirmada com sucesso via WhatsApp! Acesso liberado ao painel.",
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "business_id": str(primary_biz.id),
         "user": {
@@ -336,11 +347,17 @@ async def verify_claim_otp(
         role=owner_user.role,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    refresh_token, jti, ttl_sec = create_refresh_token(
+        subject=owner_user.id,
+        role=owner_user.role,
+    )
+    await store_refresh_token(jti=jti, user_id=str(owner_user.id), ttl_seconds=ttl_sec)
 
     return {
         "success": True,
         "message": "Identidade confirmada com sucesso via WhatsApp! Acesso liberado ao painel.",
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "business_id": str(business.id),
         "user": {

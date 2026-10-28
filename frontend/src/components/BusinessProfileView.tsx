@@ -93,12 +93,20 @@ export default function BusinessProfileView({ business, city, category, slug }: 
       const data = await res.json().catch(() => null);
       if (res.ok) {
         if (data?.access_token) {
+          await fetch('/api/auth/otp-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              access_token: data.access_token,
+              refresh_token: data.refresh_token,
+            }),
+          }).catch(() => {});
+
           const newSession = {
-            token: data.access_token,
+            token: 'cookie_session',
             user: data.user,
           };
           sessionStorage.setItem('patriotaindica_owner_session', JSON.stringify(newSession));
-          document.cookie = `owner_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
         }
         setClaimStep('success');
       } else {

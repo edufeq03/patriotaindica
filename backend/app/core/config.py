@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     JWT_AUDIENCE: str = "patriotaindica-users"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    TRUSTED_PROXY_HOPS: int = 1
 
     # External APIs
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"

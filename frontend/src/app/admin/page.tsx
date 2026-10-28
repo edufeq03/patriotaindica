@@ -75,6 +75,26 @@ export default function AdminDashboardPage() {
     return null;
   });
 
+  // T2.1: Sincronização automática com sessão HttpOnly do BFF
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.authenticated && data.user?.role === 'admin') {
+          const session = {
+            token: 'cookie_session',
+            user: {
+              name: data.user.name,
+              email: data.user.email,
+              role: data.user.role,
+            },
+          };
+          setAuthSession(session);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
@@ -85,45 +105,42 @@ export default function AdminDashboardPage() {
     setLoginLoading(true);
     setLoginError(null);
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
-
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', loginEmail.trim().toLowerCase());
-      formData.append('password', loginPassword);
-
-      const res = await fetch(`${apiBase}/auth/login`, {
+      // T2.1: Login via BFF Next.js emitindo cookies HttpOnly
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
-        body: formData.toString(),
+        body: JSON.stringify({
+          username: loginEmail.trim().toLowerCase(),
+          password: loginPassword,
+        }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.success) {
         if (data.user?.role !== 'admin') {
           setLoginError('Acesso negado: apenas contas de administrador têm permissão para acessar este portal.');
           setLoginLoading(false);
           return;
         }
         const session = {
-          token: data.access_token,
+          token: 'cookie_session',
           user: {
             name: data.user.name,
             email: data.user.email,
             role: data.user.role,
           },
         };
+        // Guarda apenas dados de apresentação em sessionStorage (sem expor token)
         sessionStorage.setItem('patriotaindica_admin_session', JSON.stringify(session));
-        // Gravar cookie com SameSite para proteção e middleware SSR
-        document.cookie = `admin_session=${data.access_token}; path=/; SameSite=Strict; max-age=86400`;
         setAuthSession(session);
         setLoginLoading(false);
         return;
       } else {
-        const errData = await res.json().catch(() => null);
-        setLoginError(errData?.detail || 'Credenciais inválidas. Verifique seu e-mail e senha.');
+        setLoginError(data?.detail || 'Credenciais inválidas. Verifique seu e-mail e senha.');
         setLoginLoading(false);
         return;
       }
@@ -133,10 +150,10 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('patriotaindica_admin_session');
-      document.cookie = 'admin_session=; path=/; max-age=0; SameSite=Strict';
     }
     setAuthSession(null);
   };
