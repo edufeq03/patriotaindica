@@ -95,6 +95,9 @@ def test_application_submit_success_with_mock_db():
             "state": "SP",
             "service_mode": "at_location",
             "service_radius_km": 15,
+            "consent_carta_principios": True,
+            "consent_termos": True,
+            "consent_privacidade": True,
         }
         response = client.post("/api/v1/businesses/application", json=payload)
         assert response.status_code == 201
@@ -382,8 +385,11 @@ def test_application_multiple_businesses_same_document():
         # Sem duplicidade para mesmo nome
         mock_res_doc = MagicMock()
         mock_res_doc.scalar_one_or_none.return_value = None
+        # Checagem de documento existente para outro dono (T1.4)
+        mock_res_other = MagicMock()
+        mock_res_other.first.return_value = None
 
-        mock_db.execute.side_effect = [mock_res_slug, mock_res_doc]
+        mock_db.execute.side_effect = [mock_res_slug, mock_res_doc, mock_res_other]
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db_allow
@@ -398,6 +404,9 @@ def test_application_multiple_businesses_same_document():
             "city": "Campinas",
             "state": "SP",
             "serves_online": True,
+            "consent_carta_principios": True,
+            "consent_termos": True,
+            "consent_privacidade": True,
         }
         res = client.post("/api/v1/businesses/application", json=payload)
         assert res.status_code == 201
@@ -427,6 +436,9 @@ def test_application_multiple_businesses_same_document():
             "neighborhood": "Cambuí",
             "city": "Campinas",
             "state": "SP",
+            "consent_carta_principios": True,
+            "consent_termos": True,
+            "consent_privacidade": True,
         }
         res = client.post("/api/v1/businesses/application", json=payload)
         assert res.status_code == 400
@@ -436,8 +448,9 @@ def test_application_multiple_businesses_same_document():
 
 
 def test_request_otp_by_phone_success_and_contingency():
+    """T1.1: request-otp-by-phone responde genericamente para mitigar enumeração de lojistas."""
     test_id = uuid4()
-    mock_row = (test_id, "UltraLimpCampinas", "19996737713")
+    mock_row = (test_id, "UltraLimpCampinas", "+5519996737713", "+5519996737713")
 
     async def override_get_db_otp():
         mock_db = AsyncMock()
@@ -448,28 +461,29 @@ def test_request_otp_by_phone_success_and_contingency():
 
     app.dependency_overrides[get_db] = override_get_db_otp
     try:
-        # 1. Envio normal com busca por dígitos
+        # 1. Envio normal para número cadastrado
         res = client.post("/api/v1/claim/request-otp-by-phone", json={"phone": "19996737713"})
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
-        assert data["business_id"] == str(test_id)
-        assert data["business_name"] == "UltraLimpCampinas"
-        # T0.6: dev_code NUNCA deve ser retornado na resposta HTTP
+        # T1.1: Anti-enumeração: NÃO deve vazar business_id nem business_name antes da validação
+        assert "business_id" not in data
+        assert "business_name" not in data
         assert "dev_code" not in data
 
-        # 2. Resiliência: se o número não for encontrado, retorna 404 amigável
-        mock_row_empty = MagicMock()
+        # 2. Anti-enumeração (H2 & T1.1): número não cadastrado devolve a MESMA resposta 200 genérica
         async def override_get_db_empty():
             mock_db = AsyncMock()
             mock_res = MagicMock()
             mock_res.all.return_value = []
             mock_db.execute.return_value = mock_res
             yield mock_db
+
         app.dependency_overrides[get_db] = override_get_db_empty
         res_nf = client.post("/api/v1/claim/request-otp-by-phone", json={"phone": "11988887777"})
-        assert res_nf.status_code == 404
-        assert "Nenhuma empresa encontrada" in res_nf.json()["detail"]
+        assert res_nf.status_code == 200
+        assert res_nf.json()["success"] is True
+        assert res_nf.json()["message"] == data["message"]
     finally:
         app.dependency_overrides.pop(get_db, None)
 

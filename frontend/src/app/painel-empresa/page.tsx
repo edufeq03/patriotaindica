@@ -326,8 +326,6 @@ function BusinessDashboardContent() {
       }
 
       setOtpSent(true);
-      setOtpTargetBizId(data.business_id);
-      setOtpMaskedPhone(data.masked_phone);
       setAuthLoading(false);
     } catch (err) {
       setAuthError('Falha de conexão com o servidor. Tente novamente.');
@@ -338,16 +336,15 @@ function BusinessDashboardContent() {
   // Login por WhatsApp (Passo 2: Confirmar OTP)
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpTargetBizId) return;
 
     setAuthLoading(true);
     setAuthError(null);
 
     try {
-      const res = await fetch(`/api/v1/claim/${otpTargetBizId}/verify-otp`, {
+      const res = await fetch('/api/v1/claim/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: otpCode.trim() }),
+        body: JSON.stringify({ phone: whatsappPhone, code: otpCode.trim() }),
       });
 
       const data = await res.json();

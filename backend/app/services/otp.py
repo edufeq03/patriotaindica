@@ -169,12 +169,39 @@ def get_default_provider() -> WhatsAppProvider:
     return ConsoleWhatsAppProvider()
 
 
+def normalize_e164(phone: str) -> Optional[str]:
+    """
+    Normaliza um número de telefone brasileiro para o padrão internacional E.164 (+55...).
+    Exemplos:
+      "19999998888"   -> "+5519999998888"
+      "(19) 99999-8888" -> "+5519999998888"
+      "5519999998888" -> "+5519999998888"
+      "+5519999998888"-> "+5519999998888"
+    """
+    if not phone:
+        return None
+    digits = "".join(filter(str.isdigit, phone))
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return f"+{digits}"
+    if len(digits) in (10, 11):
+        return f"+55{digits}"
+    if phone.strip().startswith("+") and len(digits) >= 10:
+        return f"+{digits}"
+    return None
+
+
+def hash_phone(phone_e164: str) -> str:
+    """Retorna o hash SHA-256 do telefone normalizado para chaves de rate limit e cache."""
+    return hashlib.sha256(phone_e164.strip().encode("utf-8")).hexdigest()
+
+
 class OTPService:
     def __init__(self, provider: Optional[WhatsAppProvider] = None):
         self._custom_provider = provider
-        # Armazenamento em memória com TTL (pode ser conectado a Redis em escala)
+        # Armazenamento em memória com TTL
         self._cache: Dict[str, Dict] = {}
         self._rate_limits: Dict[str, list] = {}
+        self._biz_phone_map: Dict[str, str] = {}
 
     @property
     def provider(self) -> WhatsAppProvider:
@@ -197,71 +224,127 @@ class OTPService:
             return f"+55 (**) *****-{digits[-4:]}"
         return "+55 (**) *****-****"
 
-    def check_rate_limit(self, phone_key: str, limit: int = 3, window_seconds: int = 3600) -> bool:
+    def check_rate_limit(self, key: str, limit: int = 3, window_seconds: int = 3600) -> bool:
         now = time.time()
-        requests = self._rate_limits.get(phone_key, [])
+        requests = self._rate_limits.get(key, [])
         valid_requests = [t for t in requests if now - t < window_seconds]
         if len(valid_requests) >= limit:
             return False
         valid_requests.append(now)
-        self._rate_limits[phone_key] = valid_requests
+        self._rate_limits[key] = valid_requests
         return True
 
-    async def request_otp(self, business_id: str, phone: str, business_name: str) -> Tuple[bool, str]:
-        phone_key = f"claim:{business_id}"
+    async def request_otp_by_e164(
+        self,
+        phone_e164: str,
+        business_name: str = "Patriota Indica",
+    ) -> Tuple[bool, str]:
+        """
+        Dispara OTP para um telefone E.164.
+        SEGURANÇA (T1.1):
+        - Limite de 3 envios por hora por telefone normalizado
+        - 6 dígitos randômicos seguros (secrets.randbelow)
+        - Armazena apenas hash + sal com TTL de 300 segundos
+        """
+        phone_h = hash_phone(phone_e164)
+        rate_key = f"otp:rate:{phone_h}"
 
-        # 1. Checa limite de envio (5 por hora)
-        if not self.check_rate_limit(phone_key, limit=5, window_seconds=3600):
-            return False, "Limite de envios excedido para este número. Tente novamente em alguns minutos."
+        if not self.check_rate_limit(rate_key, limit=3, window_seconds=3600):
+            return False, "Limite de envios excedido para este número (máximo 3 por hora). Tente novamente mais tarde."
 
-        # 2. Gera 6 dígitos aleatórios criptograficamente seguros
         raw_code = f"{secrets.randbelow(900000) + 100000}"
         salt = secrets.token_hex(16)
         hashed = self._hash_code(raw_code, salt)
 
-        # 3. Armazena apenas o HASH e salt com TTL de 300 segundos (5 min)
-        self._cache[phone_key] = {
+        cache_key = f"otp:{phone_h}"
+        self._cache[cache_key] = {
             "hash": hashed,
             "salt": salt,
             "attempts": 0,
             "expires_at": time.time() + 300,
         }
 
-        # 4. Despacha via provedor de WhatsApp (NUNCA expõe o código em produção oficial)
-        sent, err_msg = await self.provider.send_otp(phone, raw_code, business_name)
+        sent, err_msg = await self.provider.send_otp(phone_e164, raw_code, business_name)
         if not sent:
             return False, err_msg or "Não foi possível enviar a mensagem no WhatsApp. Tente novamente."
 
         return True, "Código enviado com sucesso via WhatsApp."
 
-    def verify_otp(self, business_id: str, submitted_code: str) -> Tuple[bool, str]:
-        phone_key = f"claim:{business_id}"
-        record = self._cache.get(phone_key)
+    def verify_otp_by_e164(self, phone_e164: str, submitted_code: str) -> Tuple[bool, str]:
+        """
+        Valida o código OTP informado contra o telefone E.164.
+        SEGURANÇA (T1.1):
+        - Comparação em tempo constante (secrets.compare_digest)
+        - Máximo de 5 tentativas por código gerado
+        - Destrói o código no cache na 5ª falha para impedir brute force
+        - Destrói o código imediatamente após validação com sucesso (uso único)
+        """
+        phone_h = hash_phone(phone_e164)
+        cache_key = f"otp:{phone_h}"
+        record = self._cache.get(cache_key)
 
         if not record:
-            return False, "Nenhum código ativo encontrado para esta empresa. Solicite um novo código."
+            return False, "Nenhum código ativo encontrado para este número. Solicite um novo código."
 
         if time.time() > record["expires_at"]:
-            del self._cache[phone_key]
+            del self._cache[cache_key]
             return False, "O código expirou (validade de 5 minutos). Solicite um novo código."
 
-        # Incrementa tentativas (máximo de 5)
         record["attempts"] += 1
         if record["attempts"] > 5:
-            del self._cache[phone_key]
-            return False, "Número máximo de tentativas excedido (5 tentativas). Solicite um novo código."
+            del self._cache[cache_key]
+            return False, "Número máximo de tentativas excedido (5 tentativas). Código bloqueado. Solicite um novo código."
 
         expected_hash = record["hash"]
         submitted_hash = self._hash_code(submitted_code.strip(), record["salt"])
 
-        # Comparação em tempo constante para evitar timing attacks
         is_match = secrets.compare_digest(expected_hash, submitted_hash)
         if is_match:
-            del self._cache[phone_key]
+            del self._cache[cache_key]
             return True, "Código validado com sucesso!"
 
         remaining = 5 - record["attempts"]
+        if remaining <= 0:
+            del self._cache[cache_key]
+            return False, "Número máximo de tentativas excedido (5 tentativas). Código bloqueado. Solicite um novo código."
+
         return False, f"Código incorreto. Você ainda tem {remaining} tentativa(s)."
+
+    async def request_otp(self, business_id: str, phone: str, business_name: str) -> Tuple[bool, str]:
+        """Compatibilidade retroativa: delega para request_otp_by_e164 e mapeia business_id."""
+        normalized = normalize_e164(phone) or phone
+        self._biz_phone_map[str(business_id)] = normalized
+        ok, msg = await self.request_otp_by_e164(normalized, business_name)
+        if ok:
+            phone_h = hash_phone(normalized)
+            if f"otp:{phone_h}" in self._cache:
+                self._cache[f"claim:{business_id}"] = self._cache[f"otp:{phone_h}"]
+        return ok, msg
+
+    def verify_otp(self, business_id: str, submitted_code: str) -> Tuple[bool, str]:
+        """Compatibilidade retroativa: resolve o telefone do business_id e valida."""
+        phone = self._biz_phone_map.get(str(business_id))
+        claim_key = f"claim:{business_id}"
+        if phone:
+            res = self.verify_otp_by_e164(phone, submitted_code)
+            phone_h = hash_phone(phone)
+            if f"otp:{phone_h}" not in self._cache:
+                self._cache.pop(claim_key, None)
+            return res
+        if claim_key in self._cache:
+            record = self._cache[claim_key]
+            record["attempts"] += 1
+            if record["attempts"] > 5 or time.time() > record["expires_at"]:
+                del self._cache[claim_key]
+                return False, "Código expirado ou número máximo de tentativas excedido (5 tentativas)."
+            expected_hash = record["hash"]
+            submitted_hash = self._hash_code(submitted_code.strip(), record["salt"])
+            if secrets.compare_digest(expected_hash, submitted_hash):
+                del self._cache[claim_key]
+                return True, "Código validado com sucesso!"
+            remaining = 5 - record["attempts"]
+            return False, f"Código incorreto. Você ainda tem {remaining} tentativa(s)."
+        return False, "Nenhum código ativo encontrado para esta empresa. Solicite um novo código."
 
 
 # Instância global singleton do serviço de OTP

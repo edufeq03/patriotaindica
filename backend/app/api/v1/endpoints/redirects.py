@@ -94,10 +94,11 @@ async def redirect_contact_event(
     if event_type not in ("whatsapp", "phone", "website"):
         raise HTTPException(status_code=400, detail="Tipo de contato inválido.")
 
-    # Buscar empresa aprovada
+    # Buscar empresa aprovada e não pausada
     stmt = select(Business).where(
         Business.id == business_id,
         Business.status == "approved",
+        Business.owner_paused.is_(False),
     )
     result = await db.execute(stmt)
     business = result.scalar_one_or_none()

@@ -284,6 +284,13 @@ async def apply_triage_decision(
                         detail="CNPJ com situação cadastral inativa/baixada. Para aprovar com override, é obrigatório registrar justificativa detalhada (mínimo 10 caracteres).",
                     )
 
+            # 3. Bloquear aprovação de documento duplicado sem override explícito (T1.4)
+            if getattr(business, "document_flag_duplicate", False) and not payload.confirm_duplicate_document:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Este negócio possui documento (CNPJ/CPF) já cadastrado para outro proprietário. A aprovação requer a confirmação explícita 'confirm_duplicate_document=true'.",
+                )
+
         business.status = new_status
         business.reviewed_by = current_admin.id
         business.reviewed_at = func.now()

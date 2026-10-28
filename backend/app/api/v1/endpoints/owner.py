@@ -1,8 +1,9 @@
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,11 +17,42 @@ from backend.app.models.user import User
 router = APIRouter()
 
 
-class BusinessOwnerUpdate(BaseModel):
+class BusinessOwnerLowRiskUpdate(BaseModel):
     """
-    SEGURANÇA (H3): Schema de atualização proposto pelo dono da empresa.
-    - extra="forbid": Impede injeção de campos não autorizados.
-    - Status, is_verified, owner_user_id, document_* NUNCA podem ser alterados aqui.
+    SEGURANÇA (T1.3): Schema de atualização imediata de baixo risco.
+    - extra="forbid": Impede qualquer campo de alto risco ou injeção.
+    - Campos de risco (name, whatsapp, phone, website, instagram, endereço, service_mode, categorias)
+      são ESTRITAMENTE proibidos aqui e devem ser submetidos via /propose-changes.
+    - logo_url e banner_url devem pertencer estritamente ao diretório local /static/uploads/.
+    - service_radius_km limitado a no máximo 50 km para alterações diretas.
+    """
+    description: Optional[str] = Field(None, max_length=2000)
+    service_radius_km: Optional[int] = Field(None, ge=1, le=50)
+    serves_at_location: Optional[bool] = None
+    serves_at_customer: Optional[bool] = None
+    serves_online: Optional[bool] = None
+    show_full_address: Optional[bool] = None
+    logo_url: Optional[str] = None
+    banner_url: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("logo_url", "banner_url")
+    @classmethod
+    def validate_storage_path(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            clean = v.strip()
+            if not clean.startswith("/static/uploads/"):
+                raise ValueError("URLs de imagem devem apontar exclusivamente para o armazenamento interno (/static/uploads/...).")
+            return clean
+        return v
+
+
+class BusinessOwnerProposeChanges(BaseModel):
+    """
+    SEGURANÇA (T1.3): Proposta de alteração de campos sensíveis/alto risco.
+    - Entra em quarentena na tabela business_pending_changes.
+    - A versão atualmente aprovada continua ativa e intacta no ar.
     """
     name: Optional[str] = Field(None, min_length=2, max_length=150)
     description: Optional[str] = Field(None, max_length=2000)
@@ -34,12 +66,9 @@ class BusinessOwnerUpdate(BaseModel):
     city: Optional[str] = Field(None, max_length=100)
     state: Optional[str] = Field(None, max_length=2)
     postal_code: Optional[str] = Field(None, max_length=10)
-    show_full_address: Optional[bool] = None
     service_mode: Optional[Literal["at_location", "at_customer", "both", "online"]] = None
-    service_radius_km: Optional[int] = Field(None, ge=1, le=500)
-    serves_at_location: Optional[bool] = None
-    serves_at_customer: Optional[bool] = None
-    serves_online: Optional[bool] = None
+    service_radius_km: Optional[int] = Field(None, ge=1, le=150)
+    show_full_address: Optional[bool] = None
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
 
@@ -64,6 +93,30 @@ class BusinessOwnerUpdate(BaseModel):
                 raise ValueError("Usuário do Instagram inválido.")
             return clean
         return v
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            clean = v.strip()
+            if not (clean.startswith("http://") or clean.startswith("https://")):
+                clean = f"https://{clean}"
+            return clean
+        return v
+
+    @field_validator("logo_url", "banner_url")
+    @classmethod
+    def validate_storage_path(cls, v: Optional[str]) -> Optional[str]:
+        if v:
+            clean = v.strip()
+            if not clean.startswith("/static/uploads/"):
+                raise ValueError("URLs de imagem devem apontar exclusivamente para o armazenamento interno (/static/uploads/...).")
+            return clean
+        return v
+
+
+# Alias para retrocompatibilidade
+BusinessOwnerUpdate = BusinessOwnerProposeChanges
 
 
 @router.get("/my-businesses")
@@ -109,6 +162,7 @@ async def get_my_businesses(
             "logo_url": b.logo_url,
             "banner_url": b.banner_url,
             "status": b.status,
+            "owner_paused": getattr(b, "owner_paused", False),
             "is_verified": b.is_verified,
             "created_at": b.created_at.isoformat() if b.created_at else None,
         }
@@ -123,7 +177,10 @@ async def toggle_business_pause(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Pausa ou reativa um anúncio aprovado pelo dono do negócio.
+    SEGURANÇA (T1.2):
+    - Pausa ou reativa a exibição pública de uma empresa aprovada pelo próprio dono.
+    - SEPARAÇÃO ESTRITA: Alterna exclusivamente a flag `owner_paused`. O campo `status` NUNCA é alterado.
+    - Empresas pendentes, rejeitadas ou suspensas pela curadoria NÃO podem ser alteradas pelo dono.
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -133,19 +190,25 @@ async def toggle_business_pause(
     if business.owner_user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Você não tem permissão para gerenciar esta empresa.")
 
-    if business.status == "approved":
-        business.status = "suspended"
-        msg = "Anúncio pausado com sucesso. Ele foi ocultado temporariamente das buscas públicas."
-    else:
+    if business.status != "approved":
         raise HTTPException(
-            status_code=400,
-            detail=f"Não é permitido alterar o status de uma empresa em '{business.status}'. Apenas empresas aprovadas podem ser pausadas pelo proprietário. Empresas em análise ou suspensas requerem aprovação do administrador.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Não é permitido alterar o status de uma empresa em '{business.status}'. Apenas empresas aprovadas podem ser pausadas pelo proprietário. Empresas em análise ou suspensas requerem moderação do administrador.",
         )
 
+    # Alterna apenas a flag owner_paused
+    business.owner_paused = not business.owner_paused
     await db.commit()
     await db.refresh(business)
+
+    if business.owner_paused:
+        msg = "Anúncio pausado com sucesso pelo proprietário. O negócio foi ocultado temporariamente das buscas públicas."
+    else:
+        msg = "Anúncio reativado com sucesso pelo proprietário. O negócio voltou a ser exibido nas buscas públicas."
+
     return {
         "success": True,
+        "owner_paused": business.owner_paused,
         "status": business.status,
         "message": msg,
     }
@@ -154,14 +217,15 @@ async def toggle_business_pause(
 @router.put("/{business_id}/profile")
 async def update_business_profile(
     business_id: UUID,
-    payload: BusinessOwnerUpdate,
+    payload: BusinessOwnerLowRiskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Atualiza dados do perfil da empresa diretamente pelo proprietário.
-    Campos como descrição, fotos, instagram, website são atualizados de imediato.
-    Se alterar WhatsApp ou Localização, o status volta para 'pending_review' para revalidação de segurança.
+    SEGURANÇA (T1.3): Atualização direta de campos de BAIXO RISCO pelo proprietário.
+    - Permite editar apenas descrição, raio (até 50km), fotos (/static/uploads/...) e métodos de atendimento.
+    - Campos de risco (nome, whatsapp, endereço, website, etc.) são rejeitados com 422 e exigem /propose-changes.
+    - Não altera status de curadoria nem aprovação.
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -175,16 +239,11 @@ async def update_business_profile(
     if not changes:
         raise HTTPException(status_code=400, detail="Nenhum dado informado para atualização.")
 
-    sensitive_keys = {"whatsapp", "neighborhood", "city", "street", "number"}
-    reopened = False
-
     for key, val in changes.items():
         if hasattr(business, key):
             setattr(business, key, val)
-        if key in sensitive_keys and val:
-            reopened = True
 
-    # Sincronizar service_mode a partir dos booleanos se foram modificados
+    # Sincroniza service_mode se os booleanos de atendimento foram modificados
     if any(k in changes for k in ("serves_at_location", "serves_at_customer", "serves_online")):
         cust = bool(business.serves_at_customer)
         loc = bool(business.serves_at_location)
@@ -198,33 +257,18 @@ async def update_business_profile(
         else:
             business.service_mode = "at_location"
 
-    if reopened and business.status == "approved":
-        business.status = "pending_review"
-
     await db.commit()
     await db.refresh(business)
 
     return {
         "success": True,
-        "reopened_triage": reopened,
         "status": business.status,
-        "message": (
-            "Perfil atualizado! Por conter alteração de WhatsApp ou Endereço, o status reabriu para 'Em Análise' na triagem por segurança."
-            if reopened
-            else "Perfil atualizado com sucesso no seu anúncio público!"
-        ),
+        "owner_paused": business.owner_paused,
+        "message": "Perfil atualizado com sucesso no seu anúncio público!",
         "business": {
             "id": str(business.id),
             "name": business.name,
             "description": business.description,
-            "whatsapp": business.whatsapp,
-            "phone": business.phone,
-            "website": business.website,
-            "instagram": business.instagram,
-            "neighborhood": business.neighborhood,
-            "city": business.city,
-            "state": business.state,
-            "service_mode": business.service_mode,
             "service_radius_km": business.service_radius_km,
             "serves_at_location": getattr(business, "serves_at_location", True),
             "serves_at_customer": getattr(business, "serves_at_customer", False),
@@ -232,6 +276,7 @@ async def update_business_profile(
             "logo_url": business.logo_url,
             "banner_url": business.banner_url,
             "status": business.status,
+            "owner_paused": business.owner_paused,
             "is_verified": business.is_verified,
         },
     }
@@ -240,14 +285,16 @@ async def update_business_profile(
 @router.post("/{business_id}/propose-changes")
 async def propose_business_changes(
     business_id: UUID,
-    payload: BusinessOwnerUpdate,
+    payload: BusinessOwnerProposeChanges,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    SEGURANÇA (H3): O proprietário propõe alterações nos dados da empresa.
-    A versão APROVADA atualmente no ar continua publicada e intacta.
-    As alterações entram em quarentena em 'business_pending_changes' para curadoria do admin.
+    SEGURANÇA (T1.3 & H3):
+    - O proprietário propõe alterações em dados sensíveis (nome, WhatsApp, endereço, site, etc.).
+    - A versão APROVADA atualmente no ar continua publicada e intacta.
+    - Teto estrito de 3 alterações pendentes por empresa para evitar sobrecarga na fila de moderação.
+    - As alterações entram em quarentena na tabela 'business_pending_changes'.
     """
     stmt = select(Business).where(Business.id == business_id)
     business = (await db.execute(stmt)).scalar_one_or_none()
@@ -259,6 +306,18 @@ async def propose_business_changes(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Você não possui permissão para gerenciar esta empresa.",
+        )
+
+    # Checa teto de 3 solicitações pendentes abertas
+    count_stmt = select(func.count(BusinessPendingChange.id)).where(
+        BusinessPendingChange.business_id == business.id,
+        BusinessPendingChange.status == "pending_review",
+    )
+    pending_count = (await db.execute(count_stmt)).scalar() or 0
+    if pending_count >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limite de 3 alterações pendentes atingido para esta empresa. Aguarde a moderação da equipe antes de submeter novas mudanças.",
         )
 
     changes_dict = payload.model_dump(exclude_unset=True)
@@ -277,7 +336,7 @@ async def propose_business_changes(
 
     return {
         "success": True,
-        "message": "Alterações enviadas com sucesso! Nossa curadoria analisará os novos dados em até 24h.",
+        "message": "Alterações enviadas com sucesso! Nossa curadoria analisará os novos dados antes de aplicá-los ao anúncio.",
         "pending_change_id": pending_change.id,
         "changes": changes_dict,
     }
@@ -318,8 +377,8 @@ async def decide_pending_change(
     current_admin: User = Depends(get_current_active_admin),
 ):
     """
-    Decisão do administrador sobre alterações propostas pelo dono (H3):
-    - 'approve': Aplica as mudanças diretamente na tabela 'businesses'.
+    Decisão do administrador sobre alterações propostas pelo dono (T1.3):
+    - 'approve': Aplica as mudanças validadas na tabela 'businesses'.
     - 'reject': Rejeita e mantém a versão original no ar.
     """
     stmt = select(BusinessPendingChange).where(BusinessPendingChange.id == change_id)

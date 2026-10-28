@@ -6,6 +6,7 @@ from backend.app.core.security import (
     get_password_hash,
     verify_password,
 )
+from pydantic import ValidationError
 from backend.app.schemas.business import BusinessApplicationCreate
 from backend.app.schemas.search import SearchQueryParams
 from backend.app.api.v1.endpoints.businesses import slugify
@@ -62,11 +63,27 @@ def test_business_application_schema():
         state="SP",
         service_mode="at_location",
         document_number="12345678000195",
+        consent_carta_principios=True,
+        consent_termos=True,
+        consent_privacidade=True,
     )
     assert app.name == "Padaria Artesanal"
     assert app.state == "SP"
     assert app.document_type == "CNPJ"
     assert app.serves_at_location is True
+    assert app.consent_carta_principios is True
+
+    # T1.6: Cadastro sem checkbox de consentimento é rejeitado pela validação (422)
+    with pytest.raises(ValidationError):
+        BusinessApplicationCreate(
+            name="Padaria Sem Consentimento",
+            whatsapp="19999998888",
+            neighborhood="Cambuí",
+            city="Campinas",
+            state="SP",
+            consent_termos=True,
+            consent_privacidade=True,
+        )
 
 
 def test_business_application_multi_attendance_modes():
@@ -82,6 +99,9 @@ def test_business_application_multi_attendance_modes():
         serves_online=True,
         service_radius_km=30,
         document_number="12345678000195",
+        consent_carta_principios=True,
+        consent_termos=True,
+        consent_privacidade=True,
     )
     assert app_all_three.serves_at_location is True
     assert app_all_three.serves_at_customer is True
@@ -99,6 +119,9 @@ def test_business_application_multi_attendance_modes():
         serves_at_customer=False,
         serves_online=True,
         document_number="12345678000195",
+        consent_carta_principios=True,
+        consent_termos=True,
+        consent_privacidade=True,
     )
     assert app_online_only.serves_online is True
     assert app_online_only.service_mode == "online"
@@ -115,6 +138,9 @@ def test_business_application_multi_attendance_modes():
             serves_at_customer=False,
             serves_online=False,
             document_number="12345678000195",
+            consent_carta_principios=True,
+            consent_termos=True,
+            consent_privacidade=True,
         )
 
 

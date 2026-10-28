@@ -40,6 +40,7 @@ class TriageDecisionRequest(BaseModel):
     action: str  # 'approve', 'request_changes', 'reject', 'suspend'
     note: Optional[str] = None
     is_verified: Optional[bool] = None
+    confirm_duplicate_document: bool = False
 
 
 class TriageChecklistResult(BaseModel):

@@ -1,15 +1,17 @@
 import hashlib
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
-from backend.app.core.security import get_current_active_admin
-from backend.app.models.events import DataSubjectRequest
+from backend.app.core.security import get_current_active_admin, get_current_user
+from backend.app.models.business import Business
+from backend.app.models.events import Consent, DataSubjectRequest
 from backend.app.models.user import User
 
 router = APIRouter()
@@ -108,3 +110,54 @@ async def list_privacy_requests_admin(
         )
         for r in records
     ]
+
+
+class ConsentRevokeRequest(BaseModel):
+    business_id: UUID
+    reason: Optional[str] = None
+
+
+@router.post("/revoke-consent")
+async def revoke_consent(
+    payload: ConsentRevokeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    CONFORMIDADE LGPD (T1.6):
+    - Permite ao titular/proprietário revogar os consentimentos concedidos.
+    - Grava revoked_at em todos os consentimentos ativos da empresa.
+    - Suspende a empresa e ativa owner_paused, retirando-a imediatamente da vitrine pública.
+    """
+    stmt = select(Business).where(Business.id == payload.business_id)
+    business = (await db.execute(stmt)).scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    if business.owner_user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Você não tem permissão para revogar consentimento desta empresa.")
+
+    now = datetime.now(timezone.utc)
+
+    # Marca revogação em todos os consentimentos ativos
+    consent_stmt = (
+        update(Consent)
+        .where(
+            Consent.business_id == business.id,
+            Consent.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await db.execute(consent_stmt)
+
+    # Remove imediatamente da vitrine pública (T1.6: 'revogação retira a empresa da vitrine')
+    business.status = "suspended"
+    business.owner_paused = True
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": "Consentimento revogado com sucesso. A empresa foi retirada da vitrine pública de acordo com a LGPD.",
+        "business_id": business.id,
+        "status": business.status,
+    }

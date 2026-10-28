@@ -142,8 +142,19 @@ class BusinessApplicationCreate(BaseModel):
     referred_by_code: Optional[str] = Field(None, max_length=50, description="Código ou link de indicação da empresa parceira")
     # Campo Honeypot anti-bot (se preenchido por bot, é rejeitado)
     website_url_hp: Optional[str] = Field(None, description="Honeypot field")
+    # Consentimentos LGPD obrigatórios (T1.6)
+    consent_carta_principios: bool = Field(..., description="Aceite obrigatório da Carta de Princípios")
+    consent_termos: bool = Field(..., description="Aceite obrigatório dos Termos de Serviço")
+    consent_privacidade: bool = Field(..., description="Aceite obrigatório da Política de Privacidade")
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("consent_carta_principios", "consent_termos", "consent_privacidade")
+    @classmethod
+    def validate_consents(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError("O consentimento explícito é obrigatório para cadastrar o negócio na plataforma.")
+        return v
 
     @field_validator("proposed_niche")
     @classmethod

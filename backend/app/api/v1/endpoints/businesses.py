@@ -11,13 +11,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+import hashlib
 from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
 from backend.app.models.business import Business, BusinessCategory
 from backend.app.models.category import Category
-from backend.app.models.events import BusinessReviewLog, Report
+from backend.app.models.events import BusinessReviewLog, Consent, Report
 from backend.app.schemas.business import BusinessApplicationCreate, BusinessDetail, ReportCreate
 from backend.app.services.geocoding import geocode_address
+from backend.app.services.otp import normalize_e164
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         .where(
             func.lower(Business.slug) == slug.lower().strip(),
             Business.status == "approved",
+            Business.owner_paused.is_(False),
         )
     )
     result = await db.execute(stmt)
@@ -163,8 +166,7 @@ async def submit_business_application(
         else None
     )
 
-    # Prevenir duplicidade do MESMO negócio (mesmo documento + mesmo nome)
-    # Permite que uma mesma dona cadastre negócios distintos (ex: contabilidade e artesanato)
+    flag_duplicate_doc = False
     if doc_num:
         doc_stmt = select(Business.id).where(
             Business.document_number == doc_num,
@@ -177,7 +179,14 @@ async def submit_business_application(
                 detail="Uma empresa com este mesmo nome e CNPJ/CPF já possui cadastro no sistema.",
             )
 
+        # DETECÇÃO DE DOCUMENTO JÁ USADO POR OUTRO DONO (T1.4)
+        other_doc_stmt = select(Business.id).where(Business.document_number == doc_num)
+        other_doc_biz = (await db.execute(other_doc_stmt)).first()
+        if other_doc_biz:
+            flag_duplicate_doc = True
+
     ref_code = f"PAT-{secrets.token_hex(3).upper()}"
+    whatsapp_e164 = normalize_e164(payload.whatsapp)
 
     try:
         new_business = Business(
@@ -187,9 +196,12 @@ async def submit_business_application(
             listing_type=payload.listing_type,
             document_type=payload.document_type or "CNPJ",
             document_number=doc_num,
+            document_flag_duplicate=flag_duplicate_doc,
+            owner_paused=False,
             referral_code=ref_code,
             referred_by_code=payload.referred_by_code.strip() if payload.referred_by_code else None,
             whatsapp=payload.whatsapp.strip(),
+            whatsapp_e164=whatsapp_e164,
             phone=payload.phone.strip() if payload.phone else None,
             website=payload.website.strip() if payload.website else None,
             instagram=payload.instagram.strip() if payload.instagram else None,
@@ -215,6 +227,23 @@ async def submit_business_application(
 
         db.add(new_business)
         await db.flush()
+
+        # PERSISTÊNCIA DE CONSENTIMENTO LGPD AUDITÁVEL (T1.6)
+        client_ip = get_client_ip(request)
+        ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest() if client_ip else None
+        ua = request.headers.get("user-agent", "")
+        ua_hash = hashlib.sha256(ua.encode("utf-8")).hexdigest() if ua else None
+
+        for c_type in ("carta_principios", "terms_of_service", "privacy_policy"):
+            consent_record = Consent(
+                business_id=new_business.id,
+                user_id=None,
+                type=c_type,
+                version="1.0",
+                ip_hash=ip_hash,
+                user_agent_hash=ua_hash,
+            )
+            db.add(consent_record)
 
         # Rastrear indicação se veio com código de empresa parceira
         if payload.referred_by_code and payload.referred_by_code.strip():

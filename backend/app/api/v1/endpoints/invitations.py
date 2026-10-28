@@ -3,8 +3,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.database import get_db
@@ -20,7 +20,7 @@ router = APIRouter()
 class InvitationCreateRequest(BaseModel):
     business_id: UUID
     phone: str
-    days_valid: int = 7
+    days_valid: int = Field(7, ge=1, le=14, description="Validade entre 1 e 14 dias (T1.7)")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -37,11 +37,11 @@ async def create_secure_invitation(
     current_admin: User = Depends(get_current_active_admin),
 ):
     """
-    SEGURANÇA (M12): Gera convite seguro baseado em hash SHA-256 (Canal B).
+    SEGURANÇA (T1.7 & M12): Gera convite seguro baseado em hash SHA-256.
     - Token de 32 bytes gerado criptograficamente com secrets.token_urlsafe.
     - O banco armazena APENAS o hash SHA-256.
-    - Expiração curta (padrão de 7 dias).
-    - Uso único.
+    - Validade limitada entre 1 e 14 dias.
+    - Uso único e atômico.
     """
     biz_stmt = select(Business).where(Business.id == payload.business_id)
     business = (await db.execute(biz_stmt)).scalar_one_or_none()
@@ -125,42 +125,58 @@ async def accept_invitation(
     current_user: User = Depends(get_current_user),
 ):
     """
-    SEGURANÇA (M12): Aceite do convite com vinculação de propriedade.
-    - Marca o convite como usado (uso único).
+    SEGURANÇA (T1.7):
+    - Consumo ATÔMICO em um único UPDATE ... WHERE used_at IS NULL RETURNING
+      para impedir condições de corrida (race conditions) concorrentes.
     - Vincula o usuário autenticado como dono da empresa.
-    - Eleva o papel do usuário para 'owner'.
+    - O selo 'is_verified' NÃO é concedido automaticamente por convite;
+      permanece sob responsabilidade estrita da triagem humana.
     """
     token_hash = hash_token(raw_token)
     now = datetime.now(timezone.utc)
 
-    stmt = select(Invitation).where(
-        Invitation.token_hash == token_hash,
-        Invitation.expires_at > now,
-        Invitation.used_at.is_(None),
+    # Execução atômica: consome o convite e obtém o business_id em uma única instrução SQL
+    consume_stmt = (
+        update(Invitation)
+        .where(
+            Invitation.token_hash == token_hash,
+            Invitation.expires_at > now,
+            Invitation.used_at.is_(None),
+        )
+        .values(
+            used_at=now,
+            used_by_user_id=current_user.id,
+        )
+        .returning(Invitation.id, Invitation.business_id, Invitation.phone)
     )
-    invitation = (await db.execute(stmt)).scalar_one_or_none()
+    result = await db.execute(consume_stmt)
+    consumed = result.first()
 
-    if not invitation:
+    if not consumed:
+        await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Convite inválido, expirado ou já utilizado.",
         )
 
-    biz_stmt = select(Business).where(Business.id == invitation.business_id)
+    inv_id, biz_id, inv_phone = consumed
+
+    biz_stmt = select(Business).where(Business.id == biz_id)
     business = (await db.execute(biz_stmt)).scalar_one_or_none()
+    if not business:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail="Empresa associada ao convite não encontrada.")
 
-    # Consumir o convite
-    invitation.used_at = now
-
-    # Vincular proprietário
+    # Vincula o usuário como proprietário da empresa
+    # NUNCA concede is_verified=True automaticamente (T1.7)
     business.owner_user_id = current_user.id
-    business.is_verified = True
-    current_user.role = "owner"
+    if current_user.role == "user":
+        current_user.role = "owner"
 
     await db.commit()
 
     return {
         "success": True,
-        "message": f"Parabéns! Você agora é o proprietário verificado de {business.name}.",
+        "message": f"Convite aceito com sucesso! Você agora é o proprietário de {business.name}.",
         "business_id": business.id,
     }

@@ -45,8 +45,11 @@ async def search_nearby_businesses(
 
     offset = (page - 1) * limit
 
-    # Query principal diretamente na tabela businesses
-    stmt = select(Business).where(Business.status == "approved")
+    # Query principal diretamente na tabela businesses: apenas empresas aprovadas e não pausadas
+    stmt = select(Business).where(
+        Business.status == "approved",
+        Business.owner_paused.is_(False),
+    )
 
     if listing_type and listing_type in ("service", "product", "both"):
         stmt = stmt.where(or_(Business.listing_type == listing_type, Business.listing_type == "both"))

@@ -24,6 +24,9 @@ CREATE INDEX IF NOT EXISTS idx_businesses_owner_paused ON businesses(owner_pause
 -- 3. Flag de detecção de documento (CNPJ/CPF) já vinculado a outro proprietário
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS document_flag_duplicate BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- 3.1 Coluna de rastreamento de uso de convite (T1.7)
+ALTER TABLE invitations ADD COLUMN IF NOT EXISTS used_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
 -- 4. Tabela de Consentimentos LGPD (Carta de Princípios, Termos e Privacidade)
 CREATE TABLE IF NOT EXISTS consents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,3 +43,31 @@ CREATE TABLE IF NOT EXISTS consents (
 CREATE INDEX IF NOT EXISTS idx_consents_business_id ON consents(business_id);
 CREATE INDEX IF NOT EXISTS idx_consents_user_id ON consents(user_id);
 CREATE INDEX IF NOT EXISTS idx_consents_type ON consents(type);
+
+-- 5. Atualização da Política RLS de Busca Pública (T1.2 & T1.5)
+-- Empresas pausadas pelo proprietário (owner_paused = TRUE) são omitidas da busca pública
+ALTER TABLE consents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE consents FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS p_businesses_public_select ON businesses;
+CREATE POLICY p_businesses_public_select ON businesses
+  FOR SELECT USING (
+    (status = 'approved' AND owner_paused = FALSE)
+    OR current_setting('app.role', true) = 'admin'
+    OR (
+      current_setting('app.user_id', true) IS NOT NULL 
+      AND current_setting('app.user_id', true) ~ '^[0-9a-fA-F-]{36}$'
+      AND current_setting('app.user_id', true)::uuid = owner_user_id
+    )
+  );
+
+DROP POLICY IF EXISTS p_consents_select ON consents;
+CREATE POLICY p_consents_select ON consents
+  FOR SELECT USING (
+    current_setting('app.role', true) = 'admin'
+    OR (
+      current_setting('app.user_id', true) IS NOT NULL 
+      AND current_setting('app.user_id', true) ~ '^[0-9a-fA-F-]{36}$'
+      AND current_setting('app.user_id', true)::uuid = user_id
+    )
+  );
