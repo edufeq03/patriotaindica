@@ -5,7 +5,7 @@ import secrets
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings
 from backend.app.core.database import get_db, set_db_app_context
@@ -181,14 +181,21 @@ async def verify_claim_otp(
     # Eleva privilégio de transação para passar por RLS durante claim inicial do proprietário
     await set_db_app_context(db, role="admin")
 
-    stmt = select(Business).where(Business.id == business_id)
-    business = (await db.execute(stmt)).scalars().first()
+    stmt = select(
+        Business.id,
+        Business.name,
+        Business.whatsapp,
+        Business.owner_user_id,
+    ).where(Business.id == business_id)
+    row = (await db.execute(stmt)).first()
 
-    if not business:
+    if not row:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
 
+    b_id, b_name, b_whatsapp, b_owner_user_id = row[0], row[1], row[2], row[3]
+
     valid, message = otp_service.verify_otp(
-        business_id=str(business.id),
+        business_id=str(b_id),
         submitted_code=payload.code,
     )
 
@@ -198,14 +205,12 @@ async def verify_claim_otp(
     try:
         # Identidade validada via WhatsApp
         now = datetime.now(timezone.utc)
-        business.whatsapp_verified_at = now
-        business.is_verified = True
 
         # Obter ou criar usuário para este dono
-        clean_phone = "".join(filter(str.isdigit, business.whatsapp or ""))
+        clean_phone = "".join(filter(str.isdigit, b_whatsapp or ""))
         owner_user = None
-        if business.owner_user_id:
-            u_stmt = select(User).where(User.id == business.owner_user_id)
+        if b_owner_user_id:
+            u_stmt = select(User).where(User.id == b_owner_user_id)
             owner_user = (await db.execute(u_stmt)).scalars().first()
 
         if not owner_user and clean_phone:
@@ -214,7 +219,7 @@ async def verify_claim_otp(
 
         if not owner_user:
             owner_user = User(
-                name=business.name,
+                name=b_name,
                 email=f"{clean_phone or secrets.token_hex(4)}@patriotaindica.com",
                 phone=clean_phone or None,
                 password_hash=get_password_hash(secrets.token_urlsafe(16)),
@@ -224,9 +229,18 @@ async def verify_claim_otp(
             db.add(owner_user)
             await db.flush()
 
-        business.owner_user_id = owner_user.id
         if owner_user.role == "user":
             owner_user.role = "owner"
+
+        await db.execute(
+            update(Business)
+            .where(Business.id == business_id)
+            .values(
+                whatsapp_verified_at=now,
+                is_verified=True,
+                owner_user_id=owner_user.id,
+            )
+        )
 
         await db.commit()
     except HTTPException:
@@ -250,7 +264,7 @@ async def verify_claim_otp(
         "message": "Identidade confirmada com sucesso via WhatsApp! Acesso liberado ao painel.",
         "access_token": access_token,
         "token_type": "bearer",
-        "business_id": str(business.id),
+        "business_id": str(b_id),
         "user": {
             "id": str(owner_user.id),
             "name": owner_user.name,

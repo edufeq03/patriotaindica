@@ -97,6 +97,17 @@ async def apply_runtime_migrations():
                 "ALTER TABLE businesses DROP CONSTRAINT IF EXISTS businesses_document_number_key;",
                 "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS referral_code VARCHAR(50);",
                 "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS referred_by_code VARCHAR(50);",
+                "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS serves_at_location BOOLEAN NOT NULL DEFAULT TRUE;",
+                "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS serves_at_customer BOOLEAN NOT NULL DEFAULT FALSE;",
+                "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS serves_online BOOLEAN NOT NULL DEFAULT FALSE;",
+                "CREATE INDEX IF NOT EXISTS idx_businesses_serves_at_location ON businesses(serves_at_location) WHERE status = 'approved';",
+                "CREATE INDEX IF NOT EXISTS idx_businesses_serves_at_customer ON businesses(serves_at_customer) WHERE status = 'approved';",
+                "CREATE INDEX IF NOT EXISTS idx_businesses_serves_online ON businesses(serves_online) WHERE status = 'approved';",
+                """UPDATE businesses SET
+                    serves_at_location = COALESCE(serves_at_location, (service_mode IN ('at_location', 'both'))),
+                    serves_at_customer = COALESCE(serves_at_customer, (service_mode IN ('at_customer', 'both'))),
+                    serves_online = COALESCE(serves_online, (service_mode = 'online'))
+                WHERE serves_at_location IS NULL OR serves_at_customer IS NULL OR serves_online IS NULL;""",
                 """CREATE TABLE IF NOT EXISTS plans (
                     id VARCHAR(30) PRIMARY KEY,
                     name VARCHAR(50) NOT NULL,
@@ -252,6 +263,13 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "version": "2.0.0",
     }
+
+
+@app.get("/api/v1/system/migrate", tags=["Health"])
+async def trigger_runtime_migrations():
+    """Permite forçar a execução das migrações de runtime sob demanda."""
+    await apply_runtime_migrations()
+    return {"status": "ok", "message": "Migrações de runtime executadas com sucesso."}
 
 
 if __name__ == "__main__":
