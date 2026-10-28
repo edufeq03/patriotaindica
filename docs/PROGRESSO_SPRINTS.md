@@ -130,15 +130,38 @@
 
 ---
 
-## 4. Próximo Passo: Sprint 5 (O Diferencial: WhatsApp Oficial)
+## 4. Sprint 5: WhatsApp Híbrido, Bot de Orçamento e Leads (Concluída)
 
-Tarefas da Sprint 5:
-1. **T5.1: Fundação da Integração Oficial (Cloud API)**:
-   - Provedor WhatsApp Cloud API com Meta Business Verification, segredos e webhook oficial.
-2. **T5.2: Autenticação via WhatsApp Oficial**:
-   - Disparo de OTP com template oficial de autenticação.
-3. **T5.3: Bot de Pedido de Orçamento & Lead Matching**:
-   - Máquina de estados conversacional para conectar clientes a até 3 lojistas aprovados da região.
-4. **T5.4: Avaliação Verificada & SLA de Resposta**:
-   - Selo "Responde Rápido" e coleta automatizada de reviews 24h após aceite.
+- **T5.1 & T5.2: Arquitetura de Provedor Híbrido Desacoplado**:
+  - Implementado o pacote [backend/app/services/whatsapp/](file:///home/capella/dev/antigravity/patriotaindica/backend/app/services/whatsapp) com padrão Strategy/Driver:
+    - `EvolutionWhatsAppProvider`: para operação piloto/imediata com custo zero da Meta via QR Code.
+    - `MetaCloudWhatsAppProvider`: para operação oficial via Graph API v19+ com verificação Meta Business.
+    - `ConsoleWhatsAppProvider`: fallback offline para desenvolvimento e testes.
+    - `get_whatsapp_service()`: factory que seleciona o driver por `WHATSAPP_PROVIDER`.
+  - Webhook oficial unificado em [whatsapp.py](file:///home/capella/dev/antigravity/patriotaindica/backend/app/api/v1/endpoints/whatsapp.py):
+    - `GET /api/v1/webhooks/whatsapp`: responde ao desafio `hub.challenge` com validação de `hub.verify_token`.
+    - `POST /api/v1/webhooks/whatsapp`: valida assinatura criptográfica `X-Hub-Signature-256` (HMAC-SHA256) contra forjamento e deduplica eventos na tabela `wa_events`.
+- **T5.3: Bot Conversacional de Orçamentos e Matching de Leads**:
+  - Máquina de estados conversacional ([bot.py](file:///home/capella/dev/antigravity/patriotaindica/backend/app/services/whatsapp/bot.py)) com persistência de contexto em Redis (e fallback em memória):
+    - Captação de necessidade e localização (suporta pin de coordenadas nativo do WhatsApp ou texto).
+    - Despacho de pedido de orçamento para até 3 empresas aprovadas na categoria e região, priorizando assinantes com planos ativos.
+    - Concorrência justa: o primeiro lojista a responder `ACEITAR <CODIGO>` fecha o pedido com exclusividade (`status = "matched"`), liberando contatos de ambos os lados no WhatsApp e notificando os demais concorrentes de que o pedido foi encerrado.
+- **T5.4 & T5.7: Métricas de SLA, Resumo de Pedidos e Selo "Responde Rápido"**:
+  - Tabela `lead_offers` com registro de `sent_at`, `responded_at` e cálculo de `response_seconds`.
+  - Endpoint `GET /api/v1/webhooks/whatsapp/owner/leads-summary` calculando taxa de aceite, média de resposta e ativando o selo "Responde Rápido" para lojistas ágeis (mínimo 3 ofertas, taxa >= 60% e resposta <= 300s).
+- **T5.1 & LGPD: Gestão de Opt-in / Opt-out**:
+  - Tabela `wa_optins`: envio de palavras-chave como `PARAR`, `SAIR` ou `CANCELAR` revoga o opt-in imediatamente e silencia o bot; `VOLTAR` reativa o canal.
+
+---
+
+## 5. Próximo Passo: Sprint 6 (Qualidade de Código, DevEx e Governança)
+
+Tarefas da Sprint 6:
+1. **T6.1: Runner de Migrações e Validação de Drift**:
+   - Runner SQL unificado e verificação de schema contra o banco.
+2. **T6.2: Camadas Estritas e DTOs por Perfil**:
+   - Routers finos, padronização de DTOs de saída (público / lojista / admin), proibição de retorno direto de instâncias ORM.
+3. **T6.3: Auditoria Final de Segurança e Testes End-to-End**:
+   - Cobertura integrada e verificação de sanidade pré-lançamento comercial.
+
 

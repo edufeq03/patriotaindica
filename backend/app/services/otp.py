@@ -160,6 +160,12 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
 def get_default_provider() -> WhatsAppProvider:
     from backend.app.core.config import settings
 
+    if (settings.WHATSAPP_PROVIDER or "").lower() == "meta_cloud" and settings.META_WHATSAPP_ACCESS_TOKEN and settings.META_WHATSAPP_PHONE_NUMBER_ID:
+        return MetaWhatsAppCloudProvider(
+            token=settings.META_WHATSAPP_ACCESS_TOKEN,
+            phone_number_id=settings.META_WHATSAPP_PHONE_NUMBER_ID,
+        )
+
     if settings.EVOLUTION_API_URL and settings.EVOLUTION_API_KEY and settings.EVOLUTION_INSTANCE_NAME:
         return EvolutionWhatsAppProvider(
             base_url=settings.EVOLUTION_API_URL,
@@ -167,6 +173,7 @@ def get_default_provider() -> WhatsAppProvider:
             instance_name=settings.EVOLUTION_INSTANCE_NAME,
         )
     return ConsoleWhatsAppProvider()
+
 
 
 def normalize_e164(phone: str) -> Optional[str]:

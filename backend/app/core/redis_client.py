@@ -61,6 +61,10 @@ def get_redis() -> Optional[aioredis.Redis]:
     return _redis_pool
 
 
+get_redis_client = get_redis
+
+
+
 async def atomic_rate_limit(
     key: str, limit: int, window_seconds: int
 ) -> Tuple[bool, int]:

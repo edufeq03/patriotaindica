@@ -33,10 +33,16 @@ class Settings(BaseSettings):
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
 
-    # Evolution WhatsApp API (Opcional - integração pronta)
+    # WhatsApp & Comunicações (Híbrido: 'evolution', 'meta_cloud', ou 'console')
+    WHATSAPP_PROVIDER: str = "evolution"
     EVOLUTION_API_URL: Optional[str] = None
     EVOLUTION_API_KEY: Optional[str] = None
     EVOLUTION_INSTANCE_NAME: Optional[str] = None
+    META_APP_SECRET: Optional[str] = None
+    META_WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
+    META_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+    META_WHATSAPP_VERIFY_TOKEN: str = "patriotaindica_verify_token_2026"
+
 
     # Mercado Pago & Monetização (Fase 1: per_owner | Fase 2: per_business)
     MERCADO_PAGO_ACCESS_TOKEN: Optional[str] = None

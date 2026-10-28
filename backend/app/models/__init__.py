@@ -5,6 +5,8 @@ from backend.app.models.city import City, CityWaitlist
 from backend.app.models.events import BusinessReviewLog, Invitation, ContactEvent, Report
 from backend.app.models.subscription import Plan, Subscription, Referral
 from backend.app.models.payment import Payment
+from backend.app.models.whatsapp import WaEvent, WaOptin
+from backend.app.models.lead import Lead, LeadOffer, LeadReview
 
 __all__ = [
     "User",
@@ -21,5 +23,11 @@ __all__ = [
     "Subscription",
     "Referral",
     "Payment",
+    "WaEvent",
+    "WaOptin",
+    "Lead",
+    "LeadOffer",
+    "LeadReview",
 ]
+
 

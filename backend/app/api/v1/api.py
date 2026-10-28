@@ -14,6 +14,7 @@ from backend.app.api.v1.endpoints import (
     search,
     triage,
     payments,
+    whatsapp,
 )
 
 api_router = APIRouter()
@@ -32,3 +33,5 @@ api_router.include_router(media.router, prefix="/media", tags=["Mídia & Upload"
 api_router.include_router(assisted.router, prefix="/assisted", tags=["Cadastro Assistido & CSV"])
 api_router.include_router(privacy.router, prefix="/privacy", tags=["Privacidade & LGPD"])
 api_router.include_router(payments.router, prefix="/payments", tags=["Planos & Pagamentos"])
+api_router.include_router(whatsapp.router, prefix="/webhooks/whatsapp", tags=["WhatsApp"])
+
