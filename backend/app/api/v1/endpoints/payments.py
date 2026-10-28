@@ -209,35 +209,15 @@ async def create_mercadopago_preference(
     }
 
 
-@router.post("/mercadopago/webhook")
-async def mercadopago_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+async def activate_user_subscription(
+    db: AsyncSession,
+    user_id: UUID,
+    plan_id: str,
+    payment_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Webhook que recebe aprovação de pagamento do Mercado Pago (Pix ou Cartão).
-    - Ativa a assinatura do proprietário
-    - Bonifica o indicador com +30 dias grátis se veio de indicação
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    topic = body.get("type") or body.get("topic")
-    data_id = (body.get("data") or {}).get("id") or body.get("id")
-
-    logger.info("Webhook Mercado Pago recebido: topic=%s id=%s", topic, data_id)
-    return {"status": "received"}
-
-
-@router.post("/simulate-activation")
-async def simulate_activation(
-    plan_id: str = Query(..., pattern="^(mensal|semestral|anual)$"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """
-    Endpoint de teste / homologação para simular ativação e testar a bonificação de 1 mês grátis.
+    Função centralizada para ativar ou prorrogar assinatura de um usuário
+    e bonificar o indicador com +30 dias grátis caso aplicável.
     """
     plan = PLANS_METADATA.get(plan_id, PLANS_METADATA["anual"])
     days = plan["duration_months"] * 30
@@ -246,7 +226,7 @@ async def simulate_activation(
     new_end = now + timedelta(days=days)
 
     # 1. Ativar ou estender assinatura
-    sub_stmt = select(Subscription).where(Subscription.owner_user_id == current_user.id)
+    sub_stmt = select(Subscription).where(Subscription.owner_user_id == user_id)
     sub = (await db.execute(sub_stmt)).scalars().first()
 
     if sub:
@@ -256,14 +236,16 @@ async def simulate_activation(
             sub.current_period_end = new_end
         sub.status = "active"
         sub.plan_id = plan_id
+        if payment_id:
+            sub.mp_payment_id = payment_id
     else:
         sub = Subscription(
-            owner_user_id=current_user.id,
+            owner_user_id=user_id,
             plan_id=plan_id,
             status="active",
             current_period_start=now,
             current_period_end=new_end,
-            mp_payment_id=f"pay_sim_{secrets.token_hex(4)}",
+            mp_payment_id=payment_id or f"pay_sim_{secrets.token_hex(4)}",
         )
         db.add(sub)
 
@@ -272,13 +254,12 @@ async def simulate_activation(
     # 2. Verificar se o usuário foi indicado por outra empresa e conceder +30 dias para o indicador
     rewarded_referrer = None
     ref_stmt = select(Referral).where(
-        Referral.referred_user_id == current_user.id,
+        Referral.referred_user_id == user_id,
         Referral.status == "pending"
     )
     referral = (await db.execute(ref_stmt)).scalars().first()
 
     if referral and referral.referrer_user_id:
-        # Buscar assinatura do indicador e somar +30 dias
         referrer_sub_stmt = select(Subscription).where(Subscription.owner_user_id == referral.referrer_user_id)
         referrer_sub = (await db.execute(referrer_sub_stmt)).scalars().first()
         if referrer_sub:
@@ -296,3 +277,69 @@ async def simulate_activation(
         "current_period_end": sub.current_period_end.isoformat(),
         "rewarded_referrer_user_id": rewarded_referrer,
     }
+
+
+@router.post("/mercadopago/webhook")
+async def mercadopago_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Webhook que recebe aprovação de pagamento do Mercado Pago (Pix ou Cartão).
+    - Consulta o status oficial do pagamento na API do Mercado Pago
+    - Ativa a assinatura do proprietário
+    - Bonifica o indicador com +30 dias grátis se veio de indicação
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    topic = body.get("type") or body.get("topic")
+    data_id = (body.get("data") or {}).get("id") or body.get("id")
+
+    logger.info("Webhook Mercado Pago recebido: topic=%s id=%s", topic, data_id)
+
+    if (topic in ("payment", "payment.updated", "payment.created") or str(topic).startswith("payment")) and data_id:
+        mp_token = settings.MERCADO_PAGO_ACCESS_TOKEN
+        if mp_token:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    res = await client.get(
+                        f"https://api.mercadopago.com/v1/payments/{data_id}",
+                        headers={"Authorization": f"Bearer {mp_token}"},
+                    )
+                    if res.status_code == 200:
+                        payment_data = res.json()
+                        if payment_data.get("status") == "approved":
+                            metadata = payment_data.get("metadata", {})
+                            user_id_str = metadata.get("user_id")
+                            plan_id = metadata.get("plan_id", "anual")
+                            if user_id_str:
+                                user_uuid = UUID(user_id_str)
+                                await activate_user_subscription(
+                                    db=db,
+                                    user_id=user_uuid,
+                                    plan_id=plan_id,
+                                    payment_id=str(data_id),
+                                )
+                                logger.info("Assinatura ativada via Webhook MP para o usuário %s no plano %s.", user_uuid, plan_id)
+            except Exception as e:
+                logger.error("Erro ao consultar pagamento no webhook MP: %s", e)
+
+    return {"status": "received"}
+
+
+@router.post("/simulate-activation")
+async def simulate_activation(
+    plan_id: str = Query(..., pattern="^(mensal|semestral|anual)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Endpoint de teste / homologação para simular ativação e testar a bonificação de 1 mês grátis.
+    """
+    return await activate_user_subscription(
+        db=db,
+        user_id=current_user.id,
+        plan_id=plan_id,
+    )
