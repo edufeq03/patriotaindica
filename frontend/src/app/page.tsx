@@ -155,9 +155,15 @@ export default function HomePage() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       let ref = params.get('ref');
+      if (ref && (ref.trim().toLowerCase() === 'none' || ref.trim().toLowerCase() === 'null')) {
+        ref = null;
+      }
       if (!ref) {
         try {
-          ref = sessionStorage.getItem('patriotaindica_ref');
+          const stored = sessionStorage.getItem('patriotaindica_ref');
+          if (stored && stored.toLowerCase() !== 'none' && stored.toLowerCase() !== 'null') {
+            ref = stored;
+          }
         } catch {}
       }
       if (ref) {

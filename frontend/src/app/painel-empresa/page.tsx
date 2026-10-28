@@ -93,6 +93,7 @@ interface OwnerBusiness {
   banner_url?: string | null;
   status: 'approved' | 'pending_review' | 'suspended' | 'rejected';
   is_verified: boolean;
+  referral_code?: string;
   created_at?: string;
   manifesto_version?: string;
 }
@@ -1068,79 +1069,93 @@ function BusinessDashboardContent() {
               </div>
 
               {/* Card 2: Indique e Ganhe (+30 dias grátis) */}
-              <div className="p-6 rounded-2xl bg-[#0d151c] border border-emerald-500/20 space-y-5 shadow-xl flex flex-col justify-between">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#182836]">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-                        <Gift className="w-5 h-5" />
+              {(() => {
+                const effectiveRefCode = (subscription?.referral_code && subscription.referral_code !== 'None' && subscription.referral_code !== 'null')
+                  ? subscription.referral_code
+                  : (activeBusiness?.referral_code && activeBusiness.referral_code !== 'None' && activeBusiness.referral_code !== 'null')
+                    ? activeBusiness.referral_code
+                    : `PAT-${(activeBusiness?.id ? activeBusiness.id.replace(/-/g, '') : '000000').slice(0, 6).toUpperCase()}`;
+
+                const effectiveReferralLink = (subscription?.referral_link && !subscription.referral_link.includes('?ref=None') && !subscription.referral_link.includes('?ref=null'))
+                  ? subscription.referral_link
+                  : `https://patriotaindica.com.br/?ref=${effectiveRefCode}`;
+
+                return (
+                  <div className="p-6 rounded-2xl bg-[#0d151c] border border-emerald-500/20 space-y-5 shadow-xl flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between pb-3 border-b border-[#182836]">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                            <Gift className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-white">Programa Indique e Ganhe</h3>
+                            <p className="text-[11px] text-emerald-400/80">Ganhe 1 mês grátis por indicação</p>
+                          </div>
+                        </div>
+
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                          +30 dias / amigo
+                        </span>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-white">Programa Indique e Ganhe</h3>
-                        <p className="text-[11px] text-emerald-400/80">Ganhe 1 mês grátis por indicação</p>
+
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Indique empresas e prestadores de confiança. Quando um amigo se cadastrar com seu link ou código e for aprovado, você ganha <strong>1 mês grátis (+30 dias)</strong> somado à sua assinatura.
+                      </p>
+
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Seu Link Exclusivo de Indicação
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 px-3 py-2 rounded-xl bg-[#070b0e] border border-[#182836] text-amber-300 font-mono text-xs truncate">
+                            {effectiveReferralLink}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyReferralLink(effectiveReferralLink)}
+                            className="px-3.5 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-white text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0"
+                          >
+                            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+                            <span>{copiedLink ? 'Copiado!' : 'Copiar'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Estatísticas de Indicação */}
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
+                          <span className="text-lg font-black text-white block">
+                            {subscription?.referral_stats?.total_referred || 0}
+                          </span>
+                          <span className="text-[11px] text-slate-400">Amigos Indicados</span>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
+                          <span className="text-lg font-black text-emerald-400 block">
+                            +{subscription?.referral_stats?.free_months_earned || 0}
+                          </span>
+                          <span className="text-[11px] text-slate-400">Meses Grátis Ganhos</span>
+                        </div>
                       </div>
                     </div>
 
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
-                      +30 dias / amigo
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Indique empresas e prestadores de confiança. Quando um amigo se cadastrar com seu link ou código e for aprovado, você ganha <strong>1 mês grátis (+30 dias)</strong> somado à sua assinatura.
-                  </p>
-
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Seu Link Exclusivo de Indicação
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 px-3 py-2 rounded-xl bg-[#070b0e] border border-[#182836] text-amber-300 font-mono text-xs truncate">
-                        {subscription?.referral_link || `https://patriotaindica.com.br/?ref=${subscription?.referral_code || 'PAT-000000'}`}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyReferralLink(subscription?.referral_link || `https://patriotaindica.com.br/?ref=${subscription?.referral_code || 'PAT-000000'}`)}
-                        className="px-3.5 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-white text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0"
+                    <div className="pt-2">
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(
+                          `Olá! Estou te convidando para cadastrar sua empresa no Patriota Indica, a maior rede de negócios e profissionais de confiança da livre iniciativa. Cadastre-se pelo meu link com aprovação prioritária: ${effectiveReferralLink}`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2"
                       >
-                        {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                        <span>{copiedLink ? 'Copiado!' : 'Copiar'}</span>
-                      </button>
+                        <MessageCircle className="w-4 h-4 fill-white text-transparent" />
+                        <span>Convidar Amigo no WhatsApp</span>
+                      </a>
                     </div>
                   </div>
-
-                  {/* Estatísticas de Indicação */}
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
-                      <span className="text-lg font-black text-white block">
-                        {subscription?.referral_stats?.total_referred || 0}
-                      </span>
-                      <span className="text-[11px] text-slate-400">Amigos Indicados</span>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
-                      <span className="text-lg font-black text-emerald-400 block">
-                        +{subscription?.referral_stats?.free_months_earned || 0}
-                      </span>
-                      <span className="text-[11px] text-slate-400">Meses Grátis Ganhos</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <a
-                    href={`https://wa.me/?text=${encodeURIComponent(
-                      `Olá! Estou te convidando para cadastrar sua empresa no Patriota Indica, a maior rede de negócios e profissionais de confiança da livre iniciativa. Cadastre-se pelo meu link com aprovação prioritária: ${subscription?.referral_link || 'https://patriotaindica.com.br'}`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle className="w-4 h-4 fill-white text-transparent" />
-                    <span>Convidar Amigo no WhatsApp</span>
-                  </a>
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {/* SEÇÃO DE GESTÃO DE IMAGENS (Logo e Capa/Banner) */}

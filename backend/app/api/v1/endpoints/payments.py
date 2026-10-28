@@ -96,7 +96,17 @@ async def get_my_subscription(
     businesses = (await db.execute(biz_stmt)).scalars().all()
 
     primary_biz = businesses[0] if businesses else None
-    referral_code = primary_biz.referral_code if primary_biz else f"PAT-{str(current_user.id)[:6].upper()}"
+    referral_code = None
+    if primary_biz:
+        ref_candidate = primary_biz.referral_code
+        if ref_candidate and ref_candidate.strip() and ref_candidate.strip().lower() not in ("none", "null"):
+            referral_code = ref_candidate.strip().upper()
+        else:
+            referral_code = f"PAT-{str(primary_biz.id).replace('-', '')[:6].upper()}"
+            primary_biz.referral_code = referral_code
+            await db.commit()
+    else:
+        referral_code = f"PAT-{str(current_user.id).replace('-', '')[:6].upper()}"
 
     # 3. Estatísticas do programa Indique e Ganhe (+30 dias por amigo)
     ref_count_stmt = select(func.count(Referral.id)).where(Referral.referrer_user_id == current_user.id)

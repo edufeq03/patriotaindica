@@ -108,6 +108,9 @@ async def apply_runtime_migrations():
                     serves_at_customer = COALESCE(serves_at_customer, (service_mode IN ('at_customer', 'both'))),
                     serves_online = COALESCE(serves_online, (service_mode = 'online'))
                 WHERE serves_at_location IS NULL OR serves_at_customer IS NULL OR serves_online IS NULL;""",
+                """UPDATE businesses SET
+                    referral_code = 'PAT-' || UPPER(SUBSTRING(REPLACE(id::text, '-', ''), 1, 6))
+                WHERE referral_code IS NULL OR referral_code = '' OR referral_code = 'None' OR referral_code = 'null';""",
                 """CREATE TABLE IF NOT EXISTS plans (
                     id VARCHAR(30) PRIMARY KEY,
                     name VARCHAR(50) NOT NULL,

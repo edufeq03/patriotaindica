@@ -94,6 +94,7 @@ async def get_my_businesses(
             "serves_at_location": getattr(b, "serves_at_location", True),
             "serves_at_customer": getattr(b, "serves_at_customer", False),
             "serves_online": getattr(b, "serves_online", False),
+            "referral_code": getattr(b, "referral_code", None) or f"PAT-{str(b.id).replace('-', '')[:6].upper()}",
             "whatsapp": b.whatsapp,
             "phone": b.phone,
             "website": b.website,
