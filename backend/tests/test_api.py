@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.core.database import get_db
@@ -433,7 +434,39 @@ def test_application_multiple_businesses_same_document():
         app.dependency_overrides.pop(get_db, None)
 
 
+def test_request_otp_by_phone_success_and_contingency():
+    test_id = uuid4()
+    mock_row = (test_id, "UltraLimpCampinas", "19996737713")
 
+    async def override_get_db_otp():
+        mock_db = AsyncMock()
+        mock_res = MagicMock()
+        mock_res.all.return_value = [mock_row]
+        mock_db.execute.return_value = mock_res
+        yield mock_db
 
+    app.dependency_overrides[get_db] = override_get_db_otp
+    try:
+        # 1. Envio normal com busca por dígitos
+        res = client.post("/api/v1/claim/request-otp-by-phone", json={"phone": "19996737713"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["success"] is True
+        assert data["business_id"] == str(test_id)
+        assert data["business_name"] == "UltraLimpCampinas"
+        assert "dev_code" in data
 
-
+        # 2. Resiliência: se o número não for encontrado, retorna 404 amigável
+        mock_row_empty = MagicMock()
+        async def override_get_db_empty():
+            mock_db = AsyncMock()
+            mock_res = MagicMock()
+            mock_res.all.return_value = []
+            mock_db.execute.return_value = mock_res
+            yield mock_db
+        app.dependency_overrides[get_db] = override_get_db_empty
+        res_nf = client.post("/api/v1/claim/request-otp-by-phone", json={"phone": "11988887777"})
+        assert res_nf.status_code == 404
+        assert "Nenhuma empresa encontrada" in res_nf.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_db, None)

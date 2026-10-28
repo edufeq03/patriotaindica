@@ -125,7 +125,7 @@ function BusinessDashboardContent() {
 
   // Estado do Login
   const [loginTab, setLoginTab] = useState<'whatsapp' | 'email'>('whatsapp');
-  const [whatsappPhone, setWhatsappPhone] = useState('');
+  const [whatsappPhone, setWhatsappPhone] = useState(() => searchParams?.get('phone') || '');
   const [otpSent, setOtpSent] = useState(false);
   const [otpTargetBizId, setOtpTargetBizId] = useState<string | null>(null);
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);

@@ -122,6 +122,7 @@ export default function HomePage() {
   // Modais
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showManifestoModal, setShowManifestoModal] = useState(false);
+  const [submittedWhatsapp, setSubmittedWhatsapp] = useState('');
 
   // Form State para Candidatura (Canal C)
   const [applicationForm, setApplicationForm] = useState({
@@ -482,37 +483,15 @@ export default function HomePage() {
       };
 
       setBusinesses((prev) => [newApp, ...prev]);
+      setSubmittedWhatsapp(applicationForm.whatsapp);
       setApplicationSubmitted(true);
       setApplicationSubmitting(false);
-
-      setTimeout(() => {
-        setApplicationSubmitted(false);
-        setShowApplicationModal(false);
-        setApplicationForm({
-          name: '',
-          category_slug: 'eletricista',
-          custom_category: '',
-          document_number: '',
-          referred_by_code: '',
-          whatsapp: '',
-          neighborhood: '',
-          city: '',
-          state: 'SP',
-          service_mode: 'both',
-          serves_at_location: true,
-          serves_at_customer: true,
-          serves_online: false,
-          service_radius_km: 20,
-          description: '',
-          accepted_manifesto: false,
-          accepted_privacy: false,
-        });
-      }, 3500);
     } catch (err) {
       console.error('Erro na submissão:', err);
       setApplicationErrorMsg('Falha de conexão com o servidor. Verifique sua conexão e tente novamente.');
       setApplicationSubmitting(false);
     }
+
   };
 
   return (
@@ -1350,23 +1329,61 @@ export default function HomePage() {
             </div>
 
             {applicationErrorMsg && (
-              <div className="p-3.5 rounded-xl bg-red-950/70 border border-red-500/60 text-red-200 text-xs flex items-start gap-2.5 shadow-lg animate-in fade-in">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <p className="font-bold text-red-300">Atenção ao preencher:</p>
-                  <p className="text-slate-300 leading-relaxed">{applicationErrorMsg}</p>
+              <div className="p-4 rounded-xl bg-red-950/70 border border-red-500/60 text-red-200 text-xs flex items-start gap-2.5 shadow-lg animate-in fade-in">
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div className="space-y-2 flex-1">
+                  <div>
+                    <p className="font-bold text-red-300">Atenção ao preencher:</p>
+                    <p className="text-slate-300 leading-relaxed">{applicationErrorMsg}</p>
+                  </div>
+                  {applicationErrorMsg.includes('já possui cadastro') && (
+                    <div className="pt-1 border-t border-red-900/40">
+                      <p className="text-[11px] text-amber-300 mb-2">
+                        Esta empresa já está em nosso banco de dados. Você pode acessá-la diretamente pelo painel:
+                      </p>
+                      <Link
+                        href={`/painel-empresa?phone=${encodeURIComponent(applicationForm.whatsapp)}`}
+                        onClick={() => setShowApplicationModal(false)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-md"
+                      >
+                        Acessar Painel do Empresário →
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
             {applicationSubmitted ? (
-              <div className="p-6 rounded-xl bg-emerald-950/60 border border-emerald-800/60 text-center space-y-2">
-                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
-                <h3 className="text-base font-bold text-white">Candidatura Enviada!</h3>
-                <p className="text-xs text-slate-300">
-                  Seu registro entrou na fila de análise com status <strong className="text-amber-400">pending_review</strong>. Nossa equipe
-                  conferirá o CNPJ e o WhatsApp em até 48 horas.
-                </p>
+              <div className="p-6 rounded-xl bg-emerald-950/60 border border-emerald-800/60 text-center space-y-4 animate-in fade-in">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto" />
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-white">Cadastro Realizado com Sucesso!</h3>
+                  <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                    Sua empresa foi cadastrada com status <strong className="text-amber-400 font-semibold">Em Análise</strong>. Você já pode acessar seu painel para gerenciar suas informações e conhecer os planos de adesão.
+                  </p>
+                </div>
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                  <Link
+                    href={`/painel-empresa?phone=${encodeURIComponent(submittedWhatsapp || applicationForm.whatsapp)}`}
+                    onClick={() => {
+                      setShowApplicationModal(false);
+                      setApplicationSubmitted(false);
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-lg"
+                  >
+                    Ir para o Painel da Empresa →
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setShowApplicationModal(false);
+                      setApplicationSubmitted(false);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-slate-300 text-xs"
+                  >
+                    Concluir e Fechar
+                  </button>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSubmitApplication} className="space-y-4 text-xs">
