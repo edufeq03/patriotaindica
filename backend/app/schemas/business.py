@@ -138,6 +138,8 @@ class BusinessApplicationCreate(BaseModel):
     primary_category_id: Optional[UUID] = None
     # Campo para propor novo nicho dinâmico (Sec. 4)
     proposed_niche: Optional[str] = Field(None, max_length=60, description="Novo nicho proposto caso não exista nas categorias")
+    # Código de indicação / cupom amigo (Member-Get-Member)
+    referred_by_code: Optional[str] = Field(None, max_length=50, description="Código ou link de indicação da empresa parceira")
     # Campo Honeypot anti-bot (se preenchido por bot, é rejeitado)
     website_url_hp: Optional[str] = Field(None, description="Honeypot field")
 

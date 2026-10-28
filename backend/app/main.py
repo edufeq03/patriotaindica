@@ -89,6 +89,53 @@ async def apply_runtime_migrations():
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64);",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;",
+                "ALTER TABLE businesses DROP CONSTRAINT IF EXISTS businesses_document_number_key;",
+                "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS referral_code VARCHAR(50);",
+                "ALTER TABLE businesses ADD COLUMN IF NOT EXISTS referred_by_code VARCHAR(50);",
+                """CREATE TABLE IF NOT EXISTS plans (
+                    id VARCHAR(30) PRIMARY KEY,
+                    name VARCHAR(50) NOT NULL,
+                    price_cents INTEGER NOT NULL,
+                    monthly_equivalent_cents INTEGER NOT NULL,
+                    duration_months INTEGER NOT NULL,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );""",
+                """INSERT INTO plans (id, name, price_cents, monthly_equivalent_cents, duration_months) VALUES
+                    ('mensal', 'Plano Mensal', 1500, 1500, 1),
+                    ('semestral', 'Plano Semestral', 7794, 1299, 6),
+                    ('anual', 'Plano Anual', 11988, 999, 12)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    price_cents = EXCLUDED.price_cents,
+                    monthly_equivalent_cents = EXCLUDED.monthly_equivalent_cents,
+                    duration_months = EXCLUDED.duration_months;""",
+                """CREATE TABLE IF NOT EXISTS subscriptions (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    business_id UUID REFERENCES businesses(id) ON DELETE SET NULL,
+                    plan_id VARCHAR(30) NOT NULL REFERENCES plans(id),
+                    status VARCHAR(30) NOT NULL DEFAULT 'active',
+                    current_period_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    current_period_end TIMESTAMPTZ NOT NULL,
+                    mp_payment_id VARCHAR(100),
+                    mp_preference_id VARCHAR(100),
+                    bonus_months_applied INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );""",
+                """CREATE TABLE IF NOT EXISTS referrals (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    referrer_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                    referrer_business_id UUID REFERENCES businesses(id) ON DELETE SET NULL,
+                    referred_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                    referred_business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+                    code VARCHAR(50) NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                    reward_granted_days INTEGER NOT NULL DEFAULT 30,
+                    rewarded_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );""",
                 """CREATE TABLE IF NOT EXISTS category_aliases (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     category_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,

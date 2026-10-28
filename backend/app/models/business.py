@@ -31,11 +31,15 @@ class Business(Base):
     description = Column(Text, nullable=True)
     listing_type = Column(listing_type_enum, nullable=False, default="service")  # 'service', 'product', 'both'
 
-    # Identificação interna (LGPD)
+    # Identificação interna (LGPD) - Permite múltiplos negócios da mesma dona (CPF/CNPJ)
     document_type = Column(String(4), nullable=True)  # 'CNPJ' ou 'CPF'
-    document_number = Column(String(14), unique=True, nullable=True)
+    document_number = Column(String(14), nullable=True, index=True)
     cnpj_situation = Column(String(50), nullable=True)
     cnpj_checked_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Indicação e Viralidade (Member-Get-Member)
+    referral_code = Column(String(50), nullable=True, index=True)
+    referred_by_code = Column(String(50), nullable=True)
 
     # Contatos diretos
     whatsapp = Column(String(20), nullable=False)

@@ -35,10 +35,37 @@ import {
   Loader2,
   Store,
   Navigation,
-  Globe
+  Globe,
+  Gift,
+  CreditCard,
+  Copy,
+  Check,
+  Users,
+  PlusCircle,
+  Sparkles,
+  X
 } from 'lucide-react';
 import { Suspense } from 'react';
 import ManifestoModal from '@/components/ManifestoModal';
+
+interface SubscriptionInfo {
+  has_subscription: boolean;
+  is_active: boolean;
+  status: string;
+  plan_id?: string | null;
+  plan_name?: string | null;
+  current_period_end?: string | null;
+  days_remaining: number;
+  billing_mode: string;
+  businesses_count: number;
+  referral_code: string;
+  referral_link: string;
+  referral_stats: {
+    total_referred: number;
+    total_rewarded: number;
+    free_months_earned: number;
+  };
+}
 
 interface OwnerBusiness {
   id: string;
@@ -142,6 +169,14 @@ function BusinessDashboardContent() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
+  // Assinatura & Programa Indique e Ganhe
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [loadingSubscription, setLoadingSubscription] = useState<boolean>(false);
+  const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<'mensal' | 'semestral' | 'anual'>('anual');
+  const [checkoutLoading, setCheckoutLoading] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
   const logoInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +217,26 @@ function BusinessDashboardContent() {
     }
   }, [activeBusiness]);
 
+  // Carregar dados da assinatura
+  const fetchSubscription = async (token: string) => {
+    setLoadingSubscription(true);
+    try {
+      const res = await fetch('/api/v1/payments/my-subscription', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data);
+      }
+    } catch (err) {
+      console.error('Erro ao consultar assinatura do proprietário:', err);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  };
+
   // Carregar negócios do proprietário autenticado
   const fetchMyBusinesses = async (token: string) => {
     setLoadingBiz(true);
@@ -211,8 +266,73 @@ function BusinessDashboardContent() {
   useEffect(() => {
     if (session?.token) {
       fetchMyBusinesses(session.token);
+      fetchSubscription(session.token);
     }
   }, [session]);
+
+  // Checkout Mercado Pago
+  const handleCreatePreference = async (planId: string) => {
+    if (!session?.token) return;
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch('/api/v1/payments/create-preference', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.token}`,
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          business_id: selectedBizId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.init_point) {
+        if (data.is_live) {
+          window.location.href = data.init_point;
+        } else {
+          // Em ambiente local sem token do MP configurado, ativa diretamente para o usuário
+          await handleSimulateActivation(planId);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao iniciar checkout Mercado Pago:', err);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  // Simular ativação rápida para teste/homologação
+  const handleSimulateActivation = async (planId: string) => {
+    if (!session?.token) return;
+    setCheckoutLoading(true);
+    try {
+      const res = await fetch(`/api/v1/payments/simulate-activation?plan_id=${planId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+        },
+      });
+      if (res.ok) {
+        setShowCheckoutModal(false);
+        await fetchSubscription(session.token);
+        setSaveSuccess('Plano ativado com sucesso! Cobertura liberada para todos os negócios da sua conta.');
+        setTimeout(() => setSaveSuccess(null), 5000);
+      }
+    } catch (err) {
+      console.error('Erro ao ativar plano:', err);
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  const handleCopyReferralLink = (link: string) => {
+    if (typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(link);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    }
+  };
 
   // Login por WhatsApp (Passo 1: Enviar OTP)
   const handleRequestOtp = async (e: React.FormEvent) => {
@@ -718,6 +838,15 @@ function BusinessDashboardContent() {
               </select>
             )}
 
+            <Link
+              href="/?action=nova-empresa"
+              title="Cadastrar outro negócio ou atividade sob a mesma assinatura"
+              className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Adicionar Negócio</span>
+            </Link>
+
             <button
               onClick={handleLogout}
               title="Encerrar sessão"
@@ -853,6 +982,166 @@ function BusinessDashboardContent() {
                 <span>{saveSuccess}</span>
               </div>
             )}
+
+            {/* SEÇÃO: ASSINATURA & INDIQUE E GANHE (CLUBE DE NEGÓCIOS) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Card 1: Status da Assinatura */}
+              <div className="p-6 rounded-2xl bg-[#0d151c] border border-[#182836] space-y-5 shadow-xl flex flex-col justify-between">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#182836]">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
+                        <Award className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Clube de Negócios Patriota</h3>
+                        <p className="text-[11px] text-slate-400">Assinatura Oficial de Visibilidade</p>
+                      </div>
+                    </div>
+
+                    {subscription?.is_active ? (
+                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        Plano Ativo
+                      </span>
+                    ) : (
+                      <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        Aguardando Ativação
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-slate-400">Plano Atual:</span>
+                      <strong className="text-sm text-white">
+                        {subscription?.plan_name || 'Nenhum plano ativo'}
+                      </strong>
+                    </div>
+
+                    {subscription?.is_active && (
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-slate-400">Validade:</span>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-emerald-400">
+                            {subscription.days_remaining} dias restantes
+                          </span>
+                          <span className="text-[11px] text-slate-500 block">
+                            Até {new Date(subscription.current_period_end!).toLocaleDateString('pt-BR')}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Vantagem Multi-negócios */}
+                    <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] flex items-start gap-2.5">
+                      <Store className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="text-xs text-slate-300 leading-tight">
+                        <strong className="text-white block mb-0.5">Cobertura Multi-Negócios Ativa</strong>
+                        Esta mesma assinatura cobre todos os seus <strong>{businesses.length} negócio(s)</strong> cadastrados nesta conta.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowCheckoutModal(true)}
+                    className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-950/40 flex items-center justify-center gap-2"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>{subscription?.is_active ? 'Renovar / Trocar Plano' : 'Ativar Plano no Mercado Pago'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSimulateActivation('anual')}
+                    title="Simular ativação de 1 ano para testes rápidos"
+                    className="px-3 py-2.5 rounded-xl bg-[#070b0e] hover:bg-[#121e29] border border-[#182836] text-slate-400 hover:text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Teste: Ativar Anual</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 2: Indique e Ganhe (+30 dias grátis) */}
+              <div className="p-6 rounded-2xl bg-[#0d151c] border border-emerald-500/20 space-y-5 shadow-xl flex flex-col justify-between">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#182836]">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                        <Gift className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Programa Indique e Ganhe</h3>
+                        <p className="text-[11px] text-emerald-400/80">Ganhe 1 mês grátis por indicação</p>
+                      </div>
+                    </div>
+
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                      +30 dias / amigo
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Indique empresas e prestadores de confiança. Quando um amigo se cadastrar com seu link ou código e for aprovado, você ganha <strong>1 mês grátis (+30 dias)</strong> somado à sua assinatura.
+                  </p>
+
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Seu Link Exclusivo de Indicação
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 px-3 py-2 rounded-xl bg-[#070b0e] border border-[#182836] text-amber-300 font-mono text-xs truncate">
+                        {subscription?.referral_link || `https://patriotaindica.com.br/?ref=${subscription?.referral_code || 'PAT-000000'}`}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyReferralLink(subscription?.referral_link || `https://patriotaindica.com.br/?ref=${subscription?.referral_code || 'PAT-000000'}`)}
+                        className="px-3.5 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-white text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0"
+                      >
+                        {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
+                        <span>{copiedLink ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Estatísticas de Indicação */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
+                      <span className="text-lg font-black text-white block">
+                        {subscription?.referral_stats?.total_referred || 0}
+                      </span>
+                      <span className="text-[11px] text-slate-400">Amigos Indicados</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] text-center">
+                      <span className="text-lg font-black text-emerald-400 block">
+                        +{subscription?.referral_stats?.free_months_earned || 0}
+                      </span>
+                      <span className="text-[11px] text-slate-400">Meses Grátis Ganhos</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Olá! Estou te convidando para cadastrar sua empresa no Patriota Indica, a maior rede de negócios e profissionais de confiança da livre iniciativa. Cadastre-se pelo meu link com aprovação prioritária: ${subscription?.referral_link || 'https://patriotaindica.com.br'}`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-white text-transparent" />
+                    <span>Convidar Amigo no WhatsApp</span>
+                  </a>
+                </div>
+              </div>
+            </div>
 
             {/* SEÇÃO DE GESTÃO DE IMAGENS (Logo e Capa/Banner) */}
             <div className="p-6 rounded-2xl bg-[#0d151c] border border-[#182836] space-y-4 shadow-xl">
@@ -1257,6 +1546,146 @@ function BusinessDashboardContent() {
         isOpen={showManifestoModal}
         onClose={() => setShowManifestoModal(false)}
       />
+
+      {/* Modal de Checkout / Planos do Clube de Negócios */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="bg-[#0d151c] border border-amber-500/40 rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowCheckoutModal(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold">
+                <Award className="w-3.5 h-3.5" />
+                <span>Clube de Negócios Patriota</span>
+              </div>
+              <h3 className="text-xl font-black text-white">Escolha o Plano para sua Empresa</h3>
+              <p className="text-xs text-slate-300">
+                Sem comissões sobre suas vendas. Visibilidade garantida para clientes que compram de patriotas.
+              </p>
+            </div>
+
+            {/* Aviso Multi-negócios */}
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+              <Store className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-200 leading-tight">
+                <strong>Vantagem Exclusiva de Lançamento:</strong> Uma única assinatura cobre todos os seus <strong>{businesses.length} negócio(s)</strong> cadastrados na sua conta, sem custos extras!
+              </div>
+            </div>
+
+            {/* Opções de Planos */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Mensal */}
+              <div
+                onClick={() => setSelectedPlanId('mensal')}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-3 relative ${
+                  selectedPlanId === 'mensal'
+                    ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/40 shadow-lg'
+                    : 'bg-[#070b0e] border-[#182836] hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">Mensal</span>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedPlanId === 'mensal' ? 'border-amber-500 bg-amber-500' : 'border-slate-600'}`}>
+                    {selectedPlanId === 'mensal' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">R$ 15,00</div>
+                  <span className="text-[10px] text-slate-400">por mês</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Sem fidelidade. Cancele quando quiser.</p>
+              </div>
+
+              {/* Semestral */}
+              <div
+                onClick={() => setSelectedPlanId('semestral')}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-3 relative ${
+                  selectedPlanId === 'semestral'
+                    ? 'bg-blue-500/10 border-blue-400 ring-2 ring-blue-500/40 shadow-lg'
+                    : 'bg-[#070b0e] border-[#182836] hover:border-slate-600'
+                }`}
+              >
+                <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[9px] font-black uppercase">
+                  -13%
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-blue-400 uppercase">Semestral</span>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedPlanId === 'semestral' ? 'border-blue-400 bg-blue-400' : 'border-slate-600'}`}>
+                    {selectedPlanId === 'semestral' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-black text-white">R$ 12,99</div>
+                  <span className="text-[10px] text-slate-400">/mês (R$ 77,94)</span>
+                </div>
+                <p className="text-[11px] text-slate-400">6 meses garantidos de visibilidade.</p>
+              </div>
+
+              {/* Anual */}
+              <div
+                onClick={() => setSelectedPlanId('anual')}
+                className={`p-4 rounded-2xl border cursor-pointer transition-all space-y-3 relative ${
+                  selectedPlanId === 'anual'
+                    ? 'bg-amber-500/15 border-amber-400 ring-2 ring-amber-500/50 shadow-xl'
+                    : 'bg-[#070b0e] border-[#182836] hover:border-slate-600'
+                }`}
+              >
+                <span className="absolute -top-2.5 right-3 px-2 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black uppercase">
+                  ⭐ Mais Escolhido
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-400 uppercase">Anual</span>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${selectedPlanId === 'anual' ? 'border-amber-400 bg-amber-400' : 'border-slate-600'}`}>
+                    {selectedPlanId === 'anual' && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xl font-black text-amber-400">R$ 9,99</div>
+                  <span className="text-[10px] text-slate-400">/mês em até 12x</span>
+                </div>
+                <p className="text-[11px] text-slate-300">Menos de R$ 0,33/dia + Selo Destaque Ouro.</p>
+              </div>
+            </div>
+
+            {/* Ações de Pagamento */}
+            <div className="pt-2 space-y-3">
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={() => handleCreatePreference(selectedPlanId)}
+                className="w-full py-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-black font-black text-xs md:text-sm transition-all shadow-lg shadow-amber-950/50 flex items-center justify-center gap-2"
+              >
+                {checkoutLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Conectando ao Mercado Pago...</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4" />
+                    <span>Pagar com Pix ou Cartão em até 12x (Mercado Pago)</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                disabled={checkoutLoading}
+                onClick={() => handleSimulateActivation(selectedPlanId)}
+                className="w-full py-2.5 rounded-xl bg-[#070b0e] hover:bg-[#121e29] border border-[#182836] text-slate-400 hover:text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Modo Teste / Homologação: Ativar Imediatamente</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

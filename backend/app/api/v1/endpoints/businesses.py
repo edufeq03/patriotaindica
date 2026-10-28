@@ -159,15 +159,21 @@ async def submit_business_application(
         else None
     )
 
-    # Prevenir duplicidade direta de CNPJ/CPF com mensagem amigável
+    # Prevenir duplicidade do MESMO negócio (mesmo documento + mesmo nome)
+    # Permite que uma mesma dona cadastre negócios distintos (ex: contabilidade e artesanato)
     if doc_num:
-        doc_stmt = select(Business.id).where(Business.document_number == doc_num)
+        doc_stmt = select(Business.id).where(
+            Business.document_number == doc_num,
+            func.lower(Business.name) == payload.name.strip().lower(),
+        )
         existing_doc = (await db.execute(doc_stmt)).scalar_one_or_none()
         if existing_doc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Este número de CNPJ/CPF já possui um cadastro ou candidatura em nosso sistema.",
+                detail="Uma empresa com este mesmo nome e CNPJ/CPF já possui cadastro no sistema.",
             )
+
+    ref_code = f"PAT-{secrets.token_hex(3).upper()}"
 
     try:
         new_business = Business(
@@ -177,6 +183,8 @@ async def submit_business_application(
             listing_type=payload.listing_type,
             document_type=payload.document_type or "CNPJ",
             document_number=doc_num,
+            referral_code=ref_code,
+            referred_by_code=payload.referred_by_code.strip() if payload.referred_by_code else None,
             whatsapp=payload.whatsapp.strip(),
             phone=payload.phone.strip() if payload.phone else None,
             website=payload.website.strip() if payload.website else None,
@@ -203,6 +211,22 @@ async def submit_business_application(
 
         db.add(new_business)
         await db.flush()
+
+        # Rastrear indicação se veio com código de empresa parceira
+        if payload.referred_by_code and payload.referred_by_code.strip():
+            clean_ref = payload.referred_by_code.strip().upper()
+            ref_stmt = select(Business).where(func.upper(Business.referral_code) == clean_ref)
+            ref_biz = (await db.execute(ref_stmt)).scalars().first()
+            if ref_biz:
+                from backend.app.models.subscription import Referral
+                referral_record = Referral(
+                    referrer_user_id=ref_biz.owner_user_id,
+                    referrer_business_id=ref_biz.id,
+                    referred_business_id=new_business.id,
+                    code=clean_ref,
+                    status="pending",
+                )
+                db.add(referral_record)
 
         # Vincular categorias existentes com verificação de FK
         for cat_id in payload.category_ids:

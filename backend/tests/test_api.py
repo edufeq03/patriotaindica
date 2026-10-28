@@ -234,5 +234,206 @@ def test_admin_create_category_success_with_mock():
         app.dependency_overrides.pop(get_db, None)
 
 
+def test_get_payment_plans():
+    """Endpoint público de planos retorna os 3 planos oficiais."""
+    response = client.get("/api/v1/payments/plans")
+    assert response.status_code == 200
+    plans = response.json()
+    assert len(plans) == 3
+    plan_ids = [p["id"] for p in plans]
+    assert "mensal" in plan_ids
+    assert "semestral" in plan_ids
+    assert "anual" in plan_ids
+
+    anual = next(p for p in plans if p["id"] == "anual")
+    assert anual["monthly_equivalent"] == "R$ 9,99"
+    assert anual["price_cents"] == 11988
+    assert anual["popular"] is True
+
+
+def test_create_mercadopago_preference():
+    """Geração de preferência do Mercado Pago para usuário logado."""
+    from backend.app.core.security import get_current_user
+    from backend.app.models.user import User
+    from uuid import uuid4
+
+    mock_owner = User(
+        id=uuid4(),
+        name="Empresária Patriota",
+        email="empresaria@teste.com",
+        role="owner",
+        is_active=True,
+    )
+
+    async def override_user():
+        return mock_owner
+
+    async def override_get_db():
+        mock_db = AsyncMock()
+        yield mock_db
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = client.post(
+            "/api/v1/payments/create-preference",
+            json={"plan_id": "anual"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "preference_id" in data
+        assert "init_point" in data
+        assert data["plan"]["id"] == "anual"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_simulate_activation_and_my_subscription():
+    """Simulação de ativação de assinatura e consulta de status."""
+    from backend.app.core.security import get_current_user
+    from backend.app.models.user import User
+    from backend.app.models.subscription import Subscription
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    mock_owner = User(
+        id=uuid4(),
+        name="Empresário Patriota",
+        email="dono@teste.com",
+        role="owner",
+        is_active=True,
+    )
+
+    async def override_user():
+        return mock_owner
+
+    # Test simulate activation
+    async def override_get_db_activate():
+        mock_db = AsyncMock()
+        mock_scalar = MagicMock()
+        mock_scalar.scalars.return_value.first.return_value = None
+        mock_db.execute.return_value = mock_scalar
+        yield mock_db
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_db] = override_get_db_activate
+    try:
+        res_act = client.post("/api/v1/payments/simulate-activation?plan_id=anual")
+        assert res_act.status_code == 200
+        data = res_act.json()
+        assert data["success"] is True
+        assert "ativada com sucesso" in data["message"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    # Test my-subscription
+    fake_sub = Subscription(
+        id=uuid4(),
+        owner_user_id=mock_owner.id,
+        plan_id="anual",
+        status="active",
+        current_period_start=datetime.now(timezone.utc),
+        current_period_end=datetime.now(timezone.utc) + timedelta(days=365),
+    )
+
+    async def override_get_db_sub():
+        mock_db = AsyncMock()
+        mock_res1 = MagicMock()
+        mock_res1.scalars.return_value.first.return_value = fake_sub
+        mock_res2 = MagicMock()
+        mock_res2.scalars.return_value.all.return_value = []
+        mock_res3 = MagicMock()
+        mock_res3.scalar.return_value = 2  # 2 indicações
+
+        mock_db.execute.side_effect = [mock_res1, mock_res2, mock_res3, mock_res3]
+        yield mock_db
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_db] = override_get_db_sub
+    try:
+        res_sub = client.get("/api/v1/payments/my-subscription")
+        assert res_sub.status_code == 200
+        sub_data = res_sub.json()
+        assert sub_data["is_active"] is True
+        assert sub_data["plan_id"] == "anual"
+        assert sub_data["days_remaining"] > 350
+        assert "referral_code" in sub_data
+        assert "referral_link" in sub_data
+        assert sub_data["referral_stats"]["total_rewarded"] == 2
+        assert sub_data["referral_stats"]["free_months_earned"] == 2
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_application_multiple_businesses_same_document():
+    """Garante que a mesma dona (mesmo CPF/CNPJ) pode cadastrar negócios distintos."""
+    from uuid import uuid4
+
+    async def override_get_db_allow():
+        mock_db = AsyncMock()
+        mock_res_slug = MagicMock()
+        mock_res_slug.scalar_one_or_none.return_value = None
+        # Sem duplicidade para mesmo nome
+        mock_res_doc = MagicMock()
+        mock_res_doc.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [mock_res_slug, mock_res_doc]
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_allow
+    try:
+        payload = {
+            "name": "Maria Artesanatos Criativos",
+            "listing_type": "product",
+            "document_type": "CNPJ",
+            "document_number": "11.222.333/0001-81",
+            "whatsapp": "19999998888",
+            "neighborhood": "Cambuí",
+            "city": "Campinas",
+            "state": "SP",
+            "serves_online": True,
+        }
+        res = client.post("/api/v1/businesses/application", json=payload)
+        assert res.status_code == 201
+        assert res.json()["success"] is True
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    # Agora mesmo documento e mesmo nome é bloqueado com 400
+    async def override_get_db_duplicate():
+        mock_db = AsyncMock()
+        mock_res_slug = MagicMock()
+        mock_res_slug.scalar_one_or_none.return_value = None
+        mock_res_doc = MagicMock()
+        mock_res_doc.scalar_one_or_none.return_value = uuid4()  # Já existe mesmo nome e documento
+
+        mock_db.execute.side_effect = [mock_res_slug, mock_res_doc]
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_duplicate
+    try:
+        payload = {
+            "name": "Maria Artesanatos Criativos",
+            "listing_type": "product",
+            "document_type": "CNPJ",
+            "document_number": "11.222.333/0001-81",
+            "whatsapp": "19999998888",
+            "neighborhood": "Cambuí",
+            "city": "Campinas",
+            "state": "SP",
+        }
+        res = client.post("/api/v1/businesses/application", json=payload)
+        assert res.status_code == 400
+        assert "mesmo nome e CNPJ/CPF" in res.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+
+
 
 

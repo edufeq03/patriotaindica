@@ -36,7 +36,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  CreditCard,
+  Gift,
+  Users
 } from 'lucide-react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
 import { Business, Category, ListingType } from '@/lib/types';
@@ -126,6 +129,7 @@ export default function HomePage() {
     category_slug: 'eletricista',
     custom_category: '',
     document_number: '',
+    referred_by_code: '',
     whatsapp: '',
     neighborhood: '',
     city: '',
@@ -142,6 +146,23 @@ export default function HomePage() {
   const [applicationSubmitted, setApplicationSubmitted] = useState(false);
   const [applicationSubmitting, setApplicationSubmitting] = useState(false);
   const [applicationErrorMsg, setApplicationErrorMsg] = useState<string | null>(null);
+  const [referralBadge, setReferralBadge] = useState<string | null>(null);
+
+  // Leitura de parâmetros de indicação ou atalhos na URL (?ref=... ou ?action=nova-empresa)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get('ref');
+      if (ref) {
+        const cleanRef = ref.trim().toUpperCase();
+        setReferralBadge(cleanRef);
+        setApplicationForm((prev) => ({ ...prev, referred_by_code: cleanRef }));
+      }
+      if (params.get('action') === 'nova-empresa' || params.get('candidatura') === 'true') {
+        setShowApplicationModal(true);
+      }
+    }
+  }, []);
 
   // Sincronização inicial com o Backend (Categorias e Empresas da Base)
   useEffect(() => {
@@ -375,6 +396,7 @@ export default function HomePage() {
       category_ids: isUuid && cat ? [cat.id] : [],
       primary_category_id: isUuid && cat ? cat.id : null,
       proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
+      referred_by_code: applicationForm.referred_by_code.trim() || null,
       show_full_address: false,
     };
 
@@ -448,6 +470,7 @@ export default function HomePage() {
           category_slug: 'eletricista',
           custom_category: '',
           document_number: '',
+          referred_by_code: '',
           whatsapp: '',
           neighborhood: '',
           city: '',
@@ -514,6 +537,15 @@ export default function HomePage() {
               <span className="hidden md:inline">Painel da Empresa</span>
             </Link>
 
+            {/* Link para Planos */}
+            <a
+              href="#planos"
+              className="text-xs px-3 py-1.5 rounded-xl border border-amber-500/20 hover:border-amber-500/40 bg-amber-500/5 text-amber-300 hover:text-white transition-all flex items-center gap-1.5 font-medium shadow-sm hidden lg:flex"
+            >
+              <Award className="w-3.5 h-3.5 text-amber-400" />
+              <span>Planos do Clube</span>
+            </a>
+
             {/* Link direto para a Central de Triagem (Etapa 3) */}
             <Link
               href="/admin"
@@ -533,6 +565,22 @@ export default function HomePage() {
           </div>
         </div>
       </header>
+
+      {/* Banner de Indicação Ativa */}
+      {referralBadge && (
+        <div className="bg-gradient-to-r from-emerald-950 via-[#0d151c] to-amber-950 border-b border-amber-500/30 py-2.5 px-4 text-center text-xs text-amber-200 flex items-center justify-center gap-2">
+          <Gift className="w-4 h-4 text-amber-400" />
+          <span>
+            Você foi convidado pelo código de parceria <strong className="font-mono text-white underline">{referralBadge}</strong>! Cadastre sua empresa e ganhe 1 mês grátis para a rede amiga.
+          </span>
+          <button
+            onClick={() => setShowApplicationModal(true)}
+            className="ml-2 px-2.5 py-0.5 rounded-lg bg-amber-500 text-black font-bold text-[11px] hover:bg-amber-400"
+          >
+            Cadastrar Agora
+          </button>
+        </div>
+      )}
 
       {/* Hero Section com Toques de Dourado Solar, Azul Celeste e Verde Esmeralda */}
       <section className="relative pt-12 pb-14 px-4 border-b border-[#182836] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-950/30 via-[#070b0e] to-[#070b0e] overflow-hidden">
@@ -991,6 +1039,246 @@ export default function HomePage() {
             </button>
           </div>
         )}
+
+        {/* SEÇÃO OFICIAL: PLANOS DE ADESÃO & CLUBE DE NEGÓCIOS PATRIOTA */}
+        <section id="planos" className="mt-20 pt-16 border-t border-[#182836] space-y-12">
+          {/* Header da Seção */}
+          <div className="text-center space-y-4 max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold uppercase tracking-wider">
+              <Award className="w-4 h-4 text-amber-400" />
+              <span>Clube de Negócios Patriota</span>
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white tracking-tight">
+              Visibilidade Garantida com Retorno Real para o seu Negócio
+            </h2>
+            <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
+              Sem comissões ocultas sobre suas vendas, sem algoritmos que sabotam seu alcance e sem intermediários.
+              Conecte-se diretamente a clientes qualificados que preferem comprar e contratar de quem defende a livre iniciativa.
+            </p>
+          </div>
+
+          {/* Destaques Exclusivos de Lançamento */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-[#0d151c] border border-amber-500/20 flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+                <Store className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-white">Múltiplos Negócios sem custo extra</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Contabilidade, artesanato ou estética? Cadastre quantas atividades você gerenciar sob a mesma assinatura de proprietário.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#0d151c] border border-emerald-500/20 flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
+                <Gift className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-white">Ganhe 1 Mês Grátis por Amigo</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Cada empresário amigo que se cadastrar com seu código adiciona <strong>+30 dias gratuitos</strong> na sua assinatura.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#0d151c] border border-blue-500/20 flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 shrink-0">
+                <CreditCard className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-white">Mercado Pago: Pix ou até 12x</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Ativação imediata via Pix ou facilidade de parcelamento em até 12 vezes no cartão de crédito.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid dos 3 Planos */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+            {/* 1. Plano Mensal */}
+            <div className="rounded-3xl bg-[#0d151c] border border-[#182836] p-6 flex flex-col justify-between space-y-6 hover:border-slate-600 transition-all">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                    Sem Fidelidade
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">1 mês</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Plano Mensal</h3>
+                  <p className="text-xs text-slate-400 mt-1">Flexibilidade total para divulgar seu negócio.</p>
+                </div>
+                <div className="pt-2 border-t border-[#182836]">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xs text-slate-400">R$</span>
+                    <span className="text-3xl font-black text-white">15,00</span>
+                    <span className="text-xs text-slate-400">/mês</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 block mt-0.5">Cobrança mensal avulsa</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-slate-300 pt-2">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Perfil verificado no Marketplace</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Botão direto para seu WhatsApp</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Múltiplos negócios no mesmo CPF/CNPJ</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Indique amigos e ganhe meses grátis</span>
+                  </li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setShowApplicationModal(true)}
+                className="w-full py-3 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] hover:border-amber-500/40 text-amber-300 font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>Quero me Candidatar</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* 2. Plano Semestral */}
+            <div className="rounded-3xl bg-[#0d151c] border border-blue-500/30 p-6 flex flex-col justify-between space-y-6 hover:border-blue-400 transition-all shadow-lg shadow-blue-950/20">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                    Economize 13%
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">6 meses</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Plano Semestral</h3>
+                  <p className="text-xs text-slate-400 mt-1">Estabilidade contínua para consolidar sua presença.</p>
+                </div>
+                <div className="pt-2 border-t border-[#182836]">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xs text-slate-400">R$</span>
+                    <span className="text-3xl font-black text-white">12,99</span>
+                    <span className="text-xs text-slate-400">/mês</span>
+                  </div>
+                  <span className="text-[11px] text-blue-300 block mt-0.5">R$ 77,94 a cada 6 meses</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-slate-300 pt-2">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Tudo incluído no Plano Mensal</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Economia garantida de 13%</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>6 meses de visibilidade garantida</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Acesso ao Painel com métricas de cliques</span>
+                  </li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setShowApplicationModal(true)}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-all shadow-md shadow-blue-950/40 flex items-center justify-center gap-1.5"
+              >
+                <span>Escolher Semestral</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* 3. Plano Anual (Destaque Patriota) */}
+            <div className="rounded-3xl bg-gradient-to-b from-[#111c25] to-[#0a1118] border-2 border-amber-500 p-6 flex flex-col justify-between space-y-6 relative shadow-2xl shadow-amber-500/10">
+              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-amber-500 to-amber-400 text-black text-[11px] font-black uppercase tracking-wider shadow-md whitespace-nowrap">
+                ⭐ Mais Escolhido • 33% OFF
+              </div>
+              <div className="space-y-4 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/40">
+                    Menos de R$ 0,33 / dia
+                  </span>
+                  <span className="text-[11px] text-amber-300 font-bold">12 meses</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white flex items-center gap-1.5">
+                    Plano Anual
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1">O melhor custo-benefício para empreendedores patriotas.</p>
+                </div>
+                <div className="pt-2 border-t border-amber-500/20">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xs text-amber-400 font-bold">R$</span>
+                    <span className="text-4xl font-black text-amber-400">9,99</span>
+                    <span className="text-xs text-slate-400">/mês</span>
+                  </div>
+                  <span className="text-[11px] text-amber-200/80 block mt-0.5">Em até 12x de R$ 9,99 (ou R$ 119,88/ano)</span>
+                </div>
+                <ul className="space-y-2.5 text-xs text-slate-200 pt-2">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span><strong>Selo Destaque Ouro</strong> nas buscas</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Prioridade máxima na curadoria local</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Múltiplos negócios cobertos</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Programa Indique e Ganhe ativado (+30 dias)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Suporte VIP e selo na vitrine</span>
+                  </li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setShowApplicationModal(true)}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-black text-xs transition-all shadow-lg shadow-amber-950/60 flex items-center justify-center gap-2"
+              >
+                <span>Garantir Vaga por R$ 9,99/mês</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Banner de Indicação com Código */}
+          <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-[#0d151c] to-amber-950/40 border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="space-y-2 text-center md:text-left">
+              <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 inline-flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                Programa Indique & Ganhe
+              </span>
+              <h3 className="text-lg md:text-xl font-bold text-white">
+                Tem amigos empresários que compartilham dos seus valores?
+              </h3>
+              <p className="text-xs text-slate-300 max-w-xl">
+                Ajude a fortalecer o comércio livre. Compartilhe seu link de indicação gerado no Painel da Empresa e ganhe <strong>1 mês grátis (+30 dias)</strong> para cada amigo que se cadastrar e ativar o plano!
+              </p>
+            </div>
+            <Link
+              href="/painel-empresa"
+              className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg shadow-emerald-950/50 shrink-0 flex items-center gap-2"
+            >
+              <span>Acessar Meu Painel e Link</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </section>
       </main>
 
       {/* Modal: Canal C - Candidatura ("Quero ser indicado") */}
@@ -1077,6 +1365,7 @@ export default function HomePage() {
                       onChange={(e) => setApplicationForm({ ...applicationForm, document_number: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
                     />
+                    <p className="text-[10px] text-slate-500 mt-1">Multi-negócios: Você pode cadastrar mais de uma empresa/atividade com o mesmo CPF/CNPJ.</p>
                   </div>
                 </div>
 
@@ -1293,6 +1582,27 @@ export default function HomePage() {
                     onChange={(e) => setApplicationForm({ ...applicationForm, description: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none resize-none"
                   />
+                </div>
+
+                {/* Código de Indicação (Amigo / Parceiro) */}
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1 flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <Gift className="w-3.5 h-3.5 text-amber-400" />
+                      Código de Indicação (Opcional)
+                    </span>
+                    <span className="text-[11px] text-amber-400 font-normal">Gera 1 mês grátis para quem indicou</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: PAT-ABC123"
+                    value={applicationForm.referred_by_code}
+                    onChange={(e) => setApplicationForm({ ...applicationForm, referred_by_code: e.target.value.toUpperCase() })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white uppercase placeholder-slate-600 focus:border-amber-500 outline-none font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Se você recebeu o convite de uma empresa amiga, digite aqui o código de indicação dela.
+                  </p>
                 </div>
 
                 {/* Adesão à Carta de Princípios (Blindagem Jurídica) */}
