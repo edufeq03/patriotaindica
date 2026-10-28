@@ -14,10 +14,10 @@
 | **Sprint 1** | Identidade e curadoria à prova de burla (K3, K4, H2, H3, H6, H7, H10, M3) | ✅ Concluída | 66 testes passando (`backend/tests/test_sprint1.py`) |
 | **Sprint 2** | Sessão, borda e infraestrutura (H1, H9, M1, M5, M6, M7, M12) | ✅ Concluída | 72 testes passando (`backend/tests/test_sprint2.py`) + `npm run build` OK |
 | **Sprint 3** | Busca por proximidade e núcleo do produto (T3.1 a T3.4) | ✅ Concluída | 77 testes passando (`backend/tests/test_sprint3.py`) + PostGIS + Cache Redis |
-| **Sprint 4** | Cobrança consistente e valor pago (H8, M8, A2.3) | ⏳ **A INICIAR** | Próxima sprint |
-| **Sprint 5** | Bot de orçamento no WhatsApp oficial (Cloud API) | ⏸️ Planejada | Depende da Sprint 4 |
-| **Sprint 6** | Redesenho UX e conversão | ⏸️ Planejada | Depende da Sprint 5 |
-| **Sprint 7** | Operação, CI/CD, backup e auditoria pré-lançamento | ⏸️ Planejada | (Base de backup & homologação já adiantada) |
+| **Sprint 4** | Cobrança consistente e valor pago (H8, M8, A2.3) | ✅ Concluída | 84 testes passando (`backend/tests/test_sprint4.py`) + Webhook Mercado Pago HMAC |
+| **Sprint 5** | WhatsApp híbrido e Concierge da Rede de Confiança | ✅ Concluída | 91 testes passando (`backend/tests/test_sprint5.py`) + Provedor Híbrido |
+| **Sprint 6** | Qualidade de código, DevEx e governança (T6.1 a T6.3) | ✅ Concluída | 95 testes passando (`backend/tests/test_sprint6.py`) + Runner de Migração & Drift Check |
+| **Sprint 7** | Rede de Negócios, Recomendações Mútuas e Go-Live | ⏳ **A INICIAR** | Endosso entre pares (`peer_endorsements`), link de bio, ASVS e homologação |
 
 ---
 
@@ -154,14 +154,33 @@
 
 ---
 
-## 5. Próximo Passo: Sprint 6 (Qualidade de Código, DevEx e Governança)
+## 5. Sprint 6: Qualidade de Código, DevEx e Governança (Concluída)
 
-Tarefas da Sprint 6:
-1. **T6.1: Runner de Migrações e Validação de Drift**:
-   - Runner SQL unificado e verificação de schema contra o banco.
-2. **T6.2: Camadas Estritas e DTOs por Perfil**:
-   - Routers finos, padronização de DTOs de saída (público / lojista / admin), proibição de retorno direto de instâncias ORM.
-3. **T6.3: Auditoria Final de Segurança e Testes End-to-End**:
-   - Cobertura integrada e verificação de sanidade pré-lançamento comercial.
+- **T6.1: Runner de Migrações Idempotente e Detecção de Drift**:
+  - Criado [database/scripts/migrate.py](file:///home/capella/dev/antigravity/patriotaindica/database/scripts/migrate.py) com controle de versão na tabela `schema_migrations`.
+  - Armazena checksum SHA-256 de cada migração executada.
+  - Modo `--check-drift` para verificação em pipelines de CI/CD: acusa erro se alguma migração já aplicada foi alterada no código-fonte.
+  - Script [scripts/run_migrations.sh](file:///home/capella/dev/antigravity/patriotaindica/scripts/run_migrations.sh) integrado, capaz de rodar via ambiente virtual Python ou container Docker psql.
+- **T6.2: DTOs Blindados e Proibição de Vazamento ORM**:
+  - Modelos ORM não são expostos diretamente em endpoints públicos.
+  - DTOs específicos filtram colunas de auditoria interna e dados sensíveis (`status`, notas administrativas, histórico de triagem).
+- **T6.3: Auditoria Final de Rotas de Risco**:
+  - Validação de que endpoints de risco legados (`/system/migrate`, `/triage/reset-businesses`, etc.) respondem estritamente com HTTP 404 Not Found.
+
+---
+
+## 6. Sprint 7: Rede de Negócios, Recomendações Mútuas e Go-Live
+
+Tarefas em andamento para ativação operacional imediata:
+1. **T7.1: Selo "Disponível Agora" (`availability_until`)**:
+   - Para atividades que demandam atendimento urgente (chaveiros, guincho, socorro mecânico, plantão).
+2. **T7.2: Endosso e Indicação Mútua Entre Pares (`peer_endorsements`)**:
+   - Empresas e profissionais da rede podem indicar publicamente outros colegas parceiros da comunidade ("Recomendado por X empresas parceiras"), gerando uma teia de confiança orgânica.
+3. **T7.3: Mini-Site / Link de Bio de Confiança (`/q/{slug}`)**:
+   - Página ultra-rápida e otimizada para celular para compartilhamento no Instagram/WhatsApp com QR Code e selos de verificação da rede.
+4. **T7.4: Checklist de Segurança OWASP ASVS Nível 1**:
+   - Validação dos controles de cabeçalhos, rate limits e autenticação.
+5. **T7.5: Ensaio de Restauração de Backup em Homologação**:
+   - Script de teste ponta a ponta simulando desastre e restauração rápida.
 
 

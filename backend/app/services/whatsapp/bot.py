@@ -173,31 +173,34 @@ async def handle_incoming_message(
 
         await db.commit()
 
-        # Notificar o lojista com o contato do cliente
+        # Notificar o lojista com o contato do cliente com espírito de rede
         client_digits = clean_phone_number(lead.client_phone_e164)
         await whatsapp_svc.send_text(
             to_phone=phone_e164,
             text=(
-                f"🎉 *Parabéns! Você garantiu o atendimento deste pedido!*\n\n"
-                f"👤 *Cliente:* {lead.client_name or 'Cliente Patriota'}\n"
+                f"🤝 *Conexão Realizada com Sucesso!*\n\n"
+                f"O Patriota Indica conectou você a um cliente da nossa rede:\n\n"
+                f"👤 *Cliente:* {lead.client_name or 'Cliente da Rede'}\n"
                 f"📱 *WhatsApp do Cliente:* https://wa.me/{client_digits}\n"
-                f"📝 *Detalhes:* {lead.description}\n\n"
-                f"Entre em contato imediatamente para fechar o orçamento! Quanto mais rápido você responder, melhor seu ranking no Patriota Indica."
+                f"📝 *Necessidade informada:* {lead.description}\n\n"
+                f"O cliente já recebeu a sua indicação, mas você já pode chamá-lo diretamente pelo link acima para apresentar seus serviços com a credibilidade de um negócio verificado!"
             ),
         )
 
-        # Notificar o cliente conectando com a empresa
+        # Notificar o cliente conectando com a empresa recomendada
         await whatsapp_svc.send_text(
             to_phone=lead.client_phone_e164,
             text=(
-                f"🇧🇷 *Boa notícia! Encontramos o profissional ideal para você!*\n\n"
+                f"🇧🇷 *Indicação Confiável da Rede Patriota Indica!*\n\n"
+                f"Temos o prazer de indicar um parceiro verificado e recomendado da nossa rede:\n\n"
                 f"🏢 *{business.name}*\n"
-                f"📍 *Região:* {business.neighborhood}, {business.city} - {business.state}\n"
-                f"📱 *WhatsApp direto:* https://wa.me/{clean_phone_number(business.whatsapp)}\n\n"
-                f"O profissional foi notificado e pode chamar você a qualquer momento, ou você já pode chamá-lo diretamente pelo link acima!"
+                f"📍 *Localização:* {business.neighborhood}, {business.city} - {business.state}\n"
+                f"📱 *Conversar no WhatsApp:* https://wa.me/{clean_phone_number(business.whatsapp)}\n\n"
+                f"O empresário já foi notificado da sua busca. Você já pode chamá-lo diretamente pelo link acima com a tranquilidade de negociar com quem tem valores alinhados e curadoria aprovada!"
             ),
         )
         return True
+
 
     # 3. Fluxo de Captação de Orçamento (Cliente Iniciando Conversa)
     state = await get_conversation_state(phone_e164)
@@ -324,18 +327,18 @@ async def handle_incoming_message(
             )
             db.add(offer)
 
-            # Notificar empresa parceira
+            # Notificar empresa parceira com foco em rede de negócios
             target_phone = b.whatsapp_e164 or b.whatsapp
             msg_offer = (
-                f"🚨 *Novo Pedido de Orçamento no Patriota Indica!*\n\n"
-                f"📍 *Região:* {city or b.city or 'Sua região'}\n"
-                f"📝 *Descrição:* \"{description}\"\n\n"
-                f"⚡ *Quem aceitar primeiro garante o cliente!*\n\n"
-                f"👉 Para aceitar agora, responda: *ACEITAR {offer_code}*\n"
-                f"👉 Para dispensar: *RECUSAR {offer_code}*"
+                f"🤝 *Nova Oportunidade de Indicação na Rede Patriota Indica!*\n\n"
+                f"📍 *Região do Cliente:* {city or b.city or 'Sua região'}\n"
+                f"📝 *Necessidade:* \"{description}\"\n\n"
+                f"Você tem disponibilidade para atender este cliente indicado pela nossa rede?\n\n"
+                f"👉 Para confirmar atendimento: *ACEITAR {offer_code}*\n"
+                f"👉 Para dispensar no momento: *RECUSAR {offer_code}*"
             )
             buttons = [
-                WhatsAppButton(id=f"ACEITAR {offer_code}", title="Aceitar Pedido"),
+                WhatsAppButton(id=f"ACEITAR {offer_code}", title="Atender Indicação"),
                 WhatsAppButton(id=f"RECUSAR {offer_code}", title="Dispensar"),
             ]
             await whatsapp_svc.send_buttons(to_phone=target_phone, text=msg_offer, buttons=buttons)
@@ -348,19 +351,20 @@ async def handle_incoming_message(
             await whatsapp_svc.send_text(
                 to_phone=phone_e164,
                 text=(
-                    "✅ *Pedido enviado com sucesso!*\n\n"
-                    f"Acabamos de notificar os melhores profissionais parceiros da sua região. "
-                    "Assim que o primeiro confirmar disponibilidade, conectaremos vocês diretamente aqui no WhatsApp!"
+                    "🇧🇷 *Indicação em andamento!*\n\n"
+                    f"Já direcionamos sua solicitação aos parceiros verificados e recomendados da nossa rede na sua região. "
+                    "Assim que confirmarem a disponibilidade, você receberá a indicação completa diretamente aqui no WhatsApp!"
                 ),
             )
         else:
             await whatsapp_svc.send_text(
                 to_phone=phone_e164,
                 text=(
-                    "✅ *Pedido registrado!*\n\n"
-                    "Nossa equipe de curadoria está mapeando novos parceiros aprovados na sua localidade e avisará você assim que houver profissionais disponíveis."
+                    "🇧🇷 *Solicitação registrada!*\n\n"
+                    "Nossa equipe de curadoria está selecionando os melhores parceiros confiáveis da sua localidade para conectar com você em breve."
                 ),
             )
         return True
+
 
     return True
