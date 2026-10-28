@@ -147,14 +147,23 @@ export default function HomePage() {
   const [applicationSubmitting, setApplicationSubmitting] = useState(false);
   const [applicationErrorMsg, setApplicationErrorMsg] = useState<string | null>(null);
   const [referralBadge, setReferralBadge] = useState<string | null>(null);
+  const [showManualReferralInput, setShowManualReferralInput] = useState(false);
 
   // Leitura de parâmetros de indicação ou atalhos na URL (?ref=... ou ?action=nova-empresa)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const ref = params.get('ref');
+      let ref = params.get('ref');
+      if (!ref) {
+        try {
+          ref = sessionStorage.getItem('patriotaindica_ref');
+        } catch {}
+      }
       if (ref) {
         const cleanRef = ref.trim().toUpperCase();
+        try {
+          sessionStorage.setItem('patriotaindica_ref', cleanRef);
+        } catch {}
         setReferralBadge(cleanRef);
         setApplicationForm((prev) => ({ ...prev, referred_by_code: cleanRef }));
       }
@@ -369,6 +378,20 @@ export default function HomePage() {
       return;
     }
 
+    if (applicationForm.serves_at_customer) {
+      const radius = Number(applicationForm.service_radius_km);
+      if (isNaN(radius) || radius < 1) {
+        setApplicationErrorMsg('Por favor, informe um raio de deslocamento válido (mínimo de 1 km).');
+        setApplicationSubmitting(false);
+        return;
+      }
+      if (radius > 150) {
+        setApplicationErrorMsg('O raio máximo de atendimento a domicílio é de 150 km. Para atendimento em outras regiões do país, selecione também a opção "Online / Nacional".');
+        setApplicationSubmitting(false);
+        return;
+      }
+    }
+
     let effectiveMode: 'at_location' | 'at_customer' | 'both' | 'online' = 'at_location';
     if (applicationForm.serves_at_customer && applicationForm.serves_at_location) {
       effectiveMode = 'both';
@@ -392,7 +415,7 @@ export default function HomePage() {
       serves_at_location: applicationForm.serves_at_location,
       serves_at_customer: applicationForm.serves_at_customer,
       serves_online: applicationForm.serves_online,
-      service_radius_km: applicationForm.serves_at_customer ? (applicationForm.service_radius_km || 20) : null,
+      service_radius_km: applicationForm.serves_at_customer ? Math.min(150, Math.max(1, Number(applicationForm.service_radius_km) || 20)) : null,
       category_ids: isUuid && cat ? [cat.id] : [],
       primary_category_id: isUuid && cat ? cat.id : null,
       proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
@@ -568,16 +591,16 @@ export default function HomePage() {
 
       {/* Banner de Indicação Ativa */}
       {referralBadge && (
-        <div className="bg-gradient-to-r from-emerald-950 via-[#0d151c] to-amber-950 border-b border-amber-500/30 py-2.5 px-4 text-center text-xs text-amber-200 flex items-center justify-center gap-2">
-          <Gift className="w-4 h-4 text-amber-400" />
+        <div className="bg-gradient-to-r from-emerald-950/80 via-[#0d151c] to-emerald-950/80 border-b border-emerald-500/30 py-2.5 px-4 text-center text-xs text-emerald-200 flex items-center justify-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>
-            Você foi convidado pelo código de parceria <strong className="font-mono text-white underline">{referralBadge}</strong>! Cadastre sua empresa e ganhe 1 mês grátis para a rede amiga.
+            Convite Especial: Você foi indicado por uma empresa parceira da Rede Patriota. Sua candidatura terá análise prioritária na curadoria!
           </span>
           <button
             onClick={() => setShowApplicationModal(true)}
-            className="ml-2 px-2.5 py-0.5 rounded-lg bg-amber-500 text-black font-bold text-[11px] hover:bg-amber-400"
+            className="ml-2 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shadow-sm"
           >
-            Cadastrar Agora
+            Cadastrar Minha Empresa
           </button>
         </div>
       )}
@@ -1542,32 +1565,94 @@ export default function HomePage() {
 
                   {/* Se atende a domicílio, exibe campo para configurar o raio de deslocamento */}
                   {applicationForm.serves_at_customer && (
-                    <div className="p-3 rounded-xl bg-[#091118] border border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      <div>
-                        <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
-                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-                          Raio Atendido a Domicílio
-                        </span>
-                        <p className="text-[11px] text-slate-400">
-                          Distância máxima que sua equipe se desloca a partir da sua base
-                        </p>
+                    <div className="p-3.5 rounded-xl bg-[#091118] border border-emerald-800/40 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                            <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                            Raio Atendido a Domicílio (Máximo 150 km)
+                          </span>
+                          <p className="text-[11px] text-slate-400">
+                            Distância máxima que sua equipe se desloca a partir da sua base
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 self-start sm:self-auto">
+                          <input
+                            type="number"
+                            min={1}
+                            max={150}
+                            value={applicationForm.service_radius_km || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === '') {
+                                setApplicationForm({ ...applicationForm, service_radius_km: 0 });
+                                return;
+                              }
+                              let num = parseInt(val, 10);
+                              if (isNaN(num)) num = 1;
+                              if (num > 150) num = 150;
+                              if (num < 1) num = 1;
+                              setApplicationForm({ ...applicationForm, service_radius_km: num });
+                            }}
+                            onBlur={(e) => {
+                              let num = parseInt(e.target.value, 10);
+                              if (isNaN(num) || num < 1) num = 15;
+                              if (num > 150) num = 150;
+                              setApplicationForm({ ...applicationForm, service_radius_km: num });
+                            }}
+                            className="w-20 px-2.5 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-emerald-500 outline-none text-sm text-center font-bold"
+                          />
+                          <span className="text-xs text-slate-300 font-medium">km</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 self-start sm:self-auto">
+
+                      {/* Slider de Alcance */}
+                      <div className="space-y-1">
                         <input
-                          type="number"
+                          type="range"
                           min={1}
-                          max={500}
-                          value={applicationForm.service_radius_km}
+                          max={150}
+                          step={1}
+                          value={applicationForm.service_radius_km || 20}
                           onChange={(e) =>
                             setApplicationForm({
                               ...applicationForm,
                               service_radius_km: Number(e.target.value),
                             })
                           }
-                          className="w-24 px-3 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm text-center font-bold"
+                          className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-[#070b0e] rounded-lg"
                         />
-                        <span className="text-xs text-slate-300 font-medium">km</span>
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>1 km (Local)</span>
+                          <span>75 km (Regional)</span>
+                          <span>150 km (Máximo)</span>
+                        </div>
                       </div>
+
+                      {/* Botões Rápidos de Preset */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] text-slate-400 mr-1">Atalhos:</span>
+                        {[10, 25, 50, 100, 150].map((km) => (
+                          <button
+                            key={`preset-${km}`}
+                            type="button"
+                            onClick={() => setApplicationForm({ ...applicationForm, service_radius_km: km })}
+                            className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all border ${
+                              applicationForm.service_radius_km === km
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                                : 'bg-[#070b0e] text-slate-400 border-[#182836] hover:text-white'
+                            }`}
+                          >
+                            {km} km
+                          </button>
+                        ))}
+                      </div>
+
+                      {applicationForm.service_radius_km >= 150 && (
+                        <p className="text-[11px] text-amber-300/90 bg-amber-950/20 p-2 rounded-lg border border-amber-500/20">
+                          💡 150 km é o limite regional padrão para deslocamento. Para clientes em outros estados ou remotos, marque também a opção <strong>Online / Nacional</strong>.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1584,26 +1669,44 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* Código de Indicação (Amigo / Parceiro) */}
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1 flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-1.5">
-                      <Gift className="w-3.5 h-3.5 text-amber-400" />
-                      Código de Indicação (Opcional)
+                {/* Indicação / Parceria de Confiança (Sem atrito e sem ruído de bonificação) */}
+                {applicationForm.referred_by_code ? (
+                  <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/40 flex items-center justify-between text-xs animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div>
+                        <span className="font-bold text-white block">Link de Parceria Reconhecido</span>
+                        <span className="text-[11px] text-emerald-300 font-mono">Código: {applicationForm.referred_by_code}</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                      Análise Prioritária
                     </span>
-                    <span className="text-[11px] text-amber-400 font-normal">Gera 1 mês grátis para quem indicou</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: PAT-ABC123"
-                    value={applicationForm.referred_by_code}
-                    onChange={(e) => setApplicationForm({ ...applicationForm, referred_by_code: e.target.value.toUpperCase() })}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white uppercase placeholder-slate-600 focus:border-amber-500 outline-none font-mono text-xs"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Se você recebeu o convite de uma empresa amiga, digite aqui o código de indicação dela.
-                  </p>
-                </div>
+                  </div>
+                ) : (
+                  <div className="text-xs pt-0.5">
+                    {!showManualReferralInput ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowManualReferralInput(true)}
+                        className="text-[11px] text-slate-400 hover:text-amber-300 underline transition-colors"
+                      >
+                        Possui um código de parceiro ou convite?
+                      </button>
+                    ) : (
+                      <div className="p-3 rounded-xl bg-[#070b0e] border border-[#182836] space-y-1.5 animate-in fade-in">
+                        <label className="block text-slate-300 font-medium text-xs">Código de Parceiro (Opcional)</label>
+                        <input
+                          type="text"
+                          placeholder="Ex: PAT-ABC123"
+                          value={applicationForm.referred_by_code}
+                          onChange={(e) => setApplicationForm({ ...applicationForm, referred_by_code: e.target.value.toUpperCase() })}
+                          className="w-full px-3 py-2 rounded-xl bg-[#0d151c] border border-[#182836] text-white uppercase placeholder-slate-600 focus:border-amber-500 outline-none font-mono text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Adesão à Carta de Princípios (Blindagem Jurídica) */}
                 <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2">

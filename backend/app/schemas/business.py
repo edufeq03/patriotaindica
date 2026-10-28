@@ -130,7 +130,7 @@ class BusinessApplicationCreate(BaseModel):
     postal_code: Optional[str] = Field(None, max_length=10)
     show_full_address: bool = False
     service_mode: Optional[Literal["at_location", "at_customer", "both", "online"]] = "at_location"
-    service_radius_km: Optional[int] = Field(None, ge=1, le=500)
+    service_radius_km: Optional[int] = Field(None, ge=1, le=150)
     serves_at_location: bool = True
     serves_at_customer: bool = False
     serves_online: bool = False

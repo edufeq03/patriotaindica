@@ -345,27 +345,94 @@ function InvitationContent() {
               </div>
 
               {formData.serves_at_customer && (
-                <div className="p-3 rounded-xl bg-[#091118] border border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  <div>
-                    <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
-                      <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-                      Raio Atendido a Domicílio
-                    </span>
-                    <p className="text-[11px] text-slate-400">
-                      Distância máxima percorrida até o cliente a partir da sua base
-                    </p>
+                <div className="p-3.5 rounded-xl bg-[#091118] border border-emerald-800/40 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                        <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                        Raio Atendido a Domicílio (Máximo 150 km)
+                      </span>
+                      <p className="text-[11px] text-slate-400">
+                        Distância máxima percorrida até o cliente a partir da sua base
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <input
+                        type="number"
+                        min={1}
+                        max={150}
+                        value={formData.service_radius_km || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            setFormData({ ...formData, service_radius_km: 0 });
+                            return;
+                          }
+                          let num = parseInt(val, 10);
+                          if (isNaN(num)) num = 1;
+                          if (num > 150) num = 150;
+                          if (num < 1) num = 1;
+                          setFormData({ ...formData, service_radius_km: num });
+                        }}
+                        onBlur={(e) => {
+                          let num = parseInt(e.target.value, 10);
+                          if (isNaN(num) || num < 1) num = 15;
+                          if (num > 150) num = 150;
+                          setFormData({ ...formData, service_radius_km: num });
+                        }}
+                        className="w-20 px-2.5 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-emerald-500 outline-none text-sm text-center font-bold"
+                      />
+                      <span className="text-xs text-slate-300 font-medium">km</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
+
+                  {/* Slider de Alcance */}
+                  <div className="space-y-1">
                     <input
-                      type="number"
+                      type="range"
                       min={1}
-                      max={500}
-                      value={formData.service_radius_km}
-                      onChange={(e) => setFormData({ ...formData, service_radius_km: Number(e.target.value) })}
-                      className="w-24 px-3 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm text-center font-bold"
+                      max={150}
+                      step={1}
+                      value={formData.service_radius_km || 20}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          service_radius_km: Number(e.target.value),
+                        })
+                      }
+                      className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-[#070b0e] rounded-lg"
                     />
-                    <span className="text-xs text-slate-300 font-medium">km</span>
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>1 km (Local)</span>
+                      <span>75 km (Regional)</span>
+                      <span>150 km (Máximo)</span>
+                    </div>
                   </div>
+
+                  {/* Botões Rápidos de Preset */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-400 mr-1">Atalhos:</span>
+                    {[10, 25, 50, 100, 150].map((km) => (
+                      <button
+                        key={`preset-${km}`}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, service_radius_km: km })}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all border ${
+                          formData.service_radius_km === km
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                            : 'bg-[#070b0e] text-slate-400 border-[#182836] hover:text-white'
+                        }`}
+                      >
+                        {km} km
+                      </button>
+                    ))}
+                  </div>
+
+                  {formData.service_radius_km >= 150 && (
+                    <p className="text-[11px] text-amber-300/90 bg-amber-950/20 p-2 rounded-lg border border-amber-500/20">
+                      💡 150 km é o limite regional padrão para deslocamento. Para clientes em outros estados ou remotos, marque também a opção <strong>Online / Nacional</strong>.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
