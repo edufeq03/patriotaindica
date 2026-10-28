@@ -136,6 +136,7 @@ async def get_business_checklist(
         "duplicate_found": False,
         "duplicate_details": [],
         "geolocation_status": "ok" if business.location is not None else "pending_review",
+        "location_pending": getattr(business, "location_pending", False),
         "geocode_source": business.geocode_source,
     }
 
@@ -299,6 +300,13 @@ async def apply_triage_decision(
             business.rejection_reason = payload.note
         if payload.is_verified is not None:
             business.is_verified = payload.is_verified
+
+        # T3.2: Ajuste manual de coordenadas pelo administrador
+        if payload.lat is not None and payload.lng is not None:
+            business.location = f"SRID=4326;POINT({payload.lng} {payload.lat})"
+            business.location_pending = False
+            business.geocode_source = "admin_manual"
+            business.geocode_confidence = 1.0
 
         # Registrar log de auditoria append-only
         log_entry = BusinessReviewLog(

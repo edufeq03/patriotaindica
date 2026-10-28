@@ -60,6 +60,7 @@ class Business(Base):
     location = Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     geocode_source = Column(String(50), nullable=True)
     geocode_confidence = Column(Float, nullable=True)
+    location_pending = Column(Boolean, nullable=False, default=False)
     service_mode = Column(service_mode_enum, nullable=False, default="at_location")  # 'at_location', 'at_customer', 'both', 'online'
     service_radius_km = Column(Integer, nullable=True)
     serves_at_location = Column(Boolean, nullable=False, default=True)

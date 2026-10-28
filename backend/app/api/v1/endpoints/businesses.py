@@ -153,11 +153,7 @@ async def submit_business_application(
         number=payload.number,
     )
     location_geog = f"SRID=4326;POINT({lng} {lat})" if lat is not None and lng is not None else None
-    if location_geog is None:
-        # Fallback de segurança para coordenadas de referência para não violar constraint NOT NULL
-        location_geog = "SRID=4326;POINT(-47.0592 -22.9064)"
-        if not geo_source:
-            geo_source = "default_campinas"
+    location_pending = (location_geog is None)
 
     # Limpar documento
     doc_num = (
@@ -215,6 +211,7 @@ async def submit_business_application(
             location=location_geog,
             geocode_source=geo_source,
             geocode_confidence=geo_conf,
+            location_pending=location_pending,
             service_mode=payload.service_mode,
             service_radius_km=payload.service_radius_km,
             serves_at_location=payload.serves_at_location,

@@ -52,6 +52,8 @@ class TriageDecisionRequest(BaseModel):
     note: Optional[str] = None
     is_verified: Optional[bool] = None
     confirm_duplicate_document: bool = False
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class TriageChecklistResult(BaseModel):

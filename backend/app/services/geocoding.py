@@ -1,11 +1,13 @@
+import json
 import logging
 from typing import Optional, Tuple
 import httpx
+from backend.app.core.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
-# Cache simples em memória para evitar chamadas redundantes
-_geocoding_cache: dict[str, Tuple[float, float, str, float]] = {}
+# Fallback em memória para ambientes sem Redis ou testes unitários
+_geocoding_cache: dict[str, Tuple[Optional[float], Optional[float], str, float]] = {}
 
 
 async def geocode_address(
@@ -16,26 +18,39 @@ async def geocode_address(
     number: Optional[str] = None,
 ) -> Tuple[Optional[float], Optional[float], str, float]:
     """
-    Geocodificação server-side nacional.
+    Geocodificação server-side nacional (T3.2).
     Retorna: (latitude, longitude, source, confidence)
     
     Fontes:
-    1. BrasilAPI CEP v2 (inclui coordenadas IBGE/Mapas quando disponíveis)
-    2. OpenStreetMap / Nominatim (fallback com busca por CEP ou Cidade + UF)
+    1. Cache persistente no Redis (TTL: 30 dias) / Fallback memória
+    2. BrasilAPI CEP v2 (inclui coordenadas IBGE/Mapas quando disponíveis)
+    3. OpenStreetMap / Nominatim (respeitando User-Agent oficial e rate limit)
     
-    SEGURANÇA (H4):
+    SEGURANÇA (H4, T3.2):
     NUNCA aplicar fallback cego para Campinas. Se a geocodificação falhar,
     retorna (None, None, 'unresolved', 0.0) para que a candidatura
-    seja resolvida na triagem manual.
+    receba location_pending = True e seja ajustada na triagem manual.
     """
     clean_cep = "".join(filter(str.isdigit, postal_code or ""))
-    cache_key = f"{clean_cep}:{city}:{state}"
+    cache_key = f"geo:{clean_cep}:{city or ''}:{state or ''}".lower()
 
+    # 1. Checar cache do Redis
+    redis = get_redis()
+    if redis:
+        try:
+            cached_val = await redis.get(cache_key)
+            if cached_val:
+                lat, lng, src, conf = json.loads(cached_val)
+                return lat, lng, src, conf
+        except Exception as exc:
+            logger.warning("Falha ao ler cache de geocodificacao do Redis: %s", exc)
+
+    # 2. Checar cache em memória
     if cache_key in _geocoding_cache:
         return _geocoding_cache[cache_key]
 
     async with httpx.AsyncClient(timeout=8.0) as client:
-        # 1. Tentar BrasilAPI CEP v2
+        # 3. Tentar BrasilAPI CEP v2
         if len(clean_cep) == 8:
             try:
                 resp = await client.get(f"https://brasilapi.com.br/api/cep/v2/{clean_cep}")
@@ -52,14 +67,14 @@ async def geocode_address(
                             lng_f = float(lng)
                             if -90.0 <= lat_f <= 90.0 and -180.0 <= lng_f <= 180.0:
                                 res = (lat_f, lng_f, "brasilapi", 0.9)
-                                _geocoding_cache[cache_key] = res
+                                await _save_cache(cache_key, res)
                                 return res
                         except (ValueError, TypeError):
                             pass
             except Exception as e:
-                logger.warning(f"Erro ao consultar BrasilAPI para CEP {clean_cep}: {e}")
+                logger.warning("Erro ao consultar BrasilAPI para CEP %s: %s", clean_cep, e)
 
-        # 2. Fallback Nominatim (OpenStreetMap)
+        # 4. Fallback Nominatim (OpenStreetMap)
         try:
             query_parts = []
             if clean_cep:
@@ -71,7 +86,7 @@ async def geocode_address(
             query_parts.append("Brasil")
 
             q = ", ".join(query_parts)
-            headers = {"User-Agent": "PatriotaIndicaGeocoding/1.0 (contato@patriotaindica.com.br)"}
+            headers = {"User-Agent": "PatriotaIndicaGeocoding/2.0 (contato@patriotaindica.com.br)"}
             resp = await client.get(
                 "https://nominatim.openstreetmap.org/search",
                 params={"q": q, "format": "json", "limit": 1, "countrycodes": "br"},
@@ -83,10 +98,26 @@ async def geocode_address(
                     lat_f = float(results[0]["lat"])
                     lng_f = float(results[0]["lon"])
                     res = (lat_f, lng_f, "nominatim", 0.75)
-                    _geocoding_cache[cache_key] = res
+                    await _save_cache(cache_key, res)
                     return res
         except Exception as e:
-            logger.warning(f"Erro ao consultar Nominatim para {cache_key}: {e}")
+            logger.warning("Erro ao consultar Nominatim para %s: %s", cache_key, e)
 
-    # Não resolvido: vai para triagem manual sem inventar coordenadas
-    return (None, None, "unresolved", 0.0)
+    # 5. Não resolvido: vai para triagem manual sem inventar coordenadas
+    unresolved_res = (None, None, "unresolved", 0.0)
+    await _save_cache(cache_key, unresolved_res, ttl=3600)  # Cache curto para não ficar chamando API repetidamente
+    return unresolved_res
+
+
+async def _save_cache(
+    cache_key: str,
+    data: Tuple[Optional[float], Optional[float], str, float],
+    ttl: int = 30 * 86400,
+) -> None:
+    _geocoding_cache[cache_key] = data
+    redis = get_redis()
+    if redis:
+        try:
+            await redis.set(cache_key, json.dumps(data), ex=ttl)
+        except Exception as exc:
+            logger.warning("Falha ao salvar geocodificacao no Redis: %s", exc)
