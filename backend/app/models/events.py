@@ -109,3 +109,20 @@ class DataSubjectRequest(Base):
     ip_hash = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class Consent(Base):
+    """
+    CONFORMIDADE LGPD (T1.6): Registro auditável de consentimentos (Carta de Princípios, Termos e Privacidade).
+    """
+    __tablename__ = "consents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    type = Column(String(50), nullable=False, index=True)  # 'carta_principios', 'terms_of_service', 'privacy_policy'
+    version = Column(String(20), nullable=False, default="1.0")
+    accepted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    ip_hash = Column(String(64), nullable=True)
+    user_agent_hash = Column(String(64), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)

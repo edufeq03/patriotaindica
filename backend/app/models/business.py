@@ -43,6 +43,7 @@ class Business(Base):
 
     # Contatos diretos
     whatsapp = Column(String(20), nullable=False)
+    whatsapp_e164 = Column(String(20), nullable=True, index=True)
     whatsapp_verified_at = Column(DateTime(timezone=True), nullable=True)
     phone = Column(String(20), nullable=True)
     website = Column(String(255), nullable=True)
@@ -71,6 +72,8 @@ class Business(Base):
 
     # Curadoria / Triagem
     status = Column(business_status_enum, nullable=False, default="pending_review", index=True)
+    owner_paused = Column(Boolean, nullable=False, default=False, index=True)
+    document_flag_duplicate = Column(Boolean, nullable=False, default=False)
     source = Column(business_source_enum, nullable=False, default="application")
     is_verified = Column(Boolean, nullable=False, default=False)
     rejection_reason = Column(Text, nullable=True)
