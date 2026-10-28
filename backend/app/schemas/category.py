@@ -19,6 +19,15 @@ class CategoryCreate(CategoryBase):
     pass
 
 
+class CategoryAdminCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    kind: Literal["service", "product", "both"] = "service"
+    icon_name: Optional[str] = "wrench"
+    display_order: Optional[int] = 0
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CategoryOut(CategoryBase):
     id: UUID
     created_at: datetime

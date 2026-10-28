@@ -32,7 +32,10 @@ import {
   Smartphone,
   KeyRound,
   RefreshCw,
-  Loader2
+  Loader2,
+  Store,
+  Navigation,
+  Globe
 } from 'lucide-react';
 import { Suspense } from 'react';
 import ManifestoModal from '@/components/ManifestoModal';
@@ -45,6 +48,9 @@ interface OwnerBusiness {
   listing_type: string;
   service_mode: 'at_customer' | 'at_location' | 'both' | 'online';
   service_radius_km?: number | null;
+  serves_at_location?: boolean;
+  serves_at_customer?: boolean;
+  serves_online?: boolean;
   whatsapp: string;
   phone?: string | null;
   website?: string | null;
@@ -121,6 +127,9 @@ function BusinessDashboardContent() {
   const [city, setCity] = useState('');
   const [state, setState] = useState('SP');
   const [serviceMode, setServiceMode] = useState<'at_customer' | 'at_location' | 'both' | 'online'>('at_customer');
+  const [servesAtLocation, setServesAtLocation] = useState<boolean>(true);
+  const [servesAtCustomer, setServesAtCustomer] = useState<boolean>(true);
+  const [servesOnline, setServesOnline] = useState<boolean>(false);
   const [serviceRadiusKm, setServiceRadiusKm] = useState<number>(20);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
@@ -150,6 +159,21 @@ function BusinessDashboardContent() {
       setCity(activeBusiness.city || '');
       setState(activeBusiness.state || 'SP');
       setServiceMode(activeBusiness.service_mode || 'at_customer');
+      setServesAtLocation(
+        activeBusiness.serves_at_location !== undefined
+          ? activeBusiness.serves_at_location
+          : activeBusiness.service_mode === 'at_location' || activeBusiness.service_mode === 'both'
+      );
+      setServesAtCustomer(
+        activeBusiness.serves_at_customer !== undefined
+          ? activeBusiness.serves_at_customer
+          : activeBusiness.service_mode === 'at_customer' || activeBusiness.service_mode === 'both'
+      );
+      setServesOnline(
+        activeBusiness.serves_online !== undefined
+          ? activeBusiness.serves_online
+          : activeBusiness.service_mode === 'online'
+      );
       setServiceRadiusKm(activeBusiness.service_radius_km || 20);
       setLogoUrl(activeBusiness.logo_url || null);
       setBannerUrl(activeBusiness.banner_url || null);
@@ -407,6 +431,21 @@ function BusinessDashboardContent() {
     setSaveLoading(true);
     setSaveSuccess(null);
 
+    if (!servesAtLocation && !servesAtCustomer && !servesOnline) {
+      alert('Selecione ao menos uma forma de atendimento (No Estabelecimento, A Domicílio ou Online).');
+      setSaveLoading(false);
+      return;
+    }
+
+    let effectiveMode: 'at_location' | 'at_customer' | 'both' | 'online' = 'at_location';
+    if (servesAtCustomer && servesAtLocation) {
+      effectiveMode = 'both';
+    } else if (servesAtCustomer) {
+      effectiveMode = 'at_customer';
+    } else if (servesOnline && !servesAtLocation) {
+      effectiveMode = 'online';
+    }
+
     try {
       const payload = {
         description: description.trim(),
@@ -417,8 +456,11 @@ function BusinessDashboardContent() {
         neighborhood: neighborhood.trim(),
         city: city.trim(),
         state: state.trim().toUpperCase(),
-        service_mode: serviceMode,
-        service_radius_km: serviceRadiusKm || 20,
+        service_mode: effectiveMode,
+        serves_at_location: servesAtLocation,
+        serves_at_customer: servesAtCustomer,
+        serves_online: servesOnline,
+        service_radius_km: servesAtCustomer ? (serviceRadiusKm || 20) : null,
         logo_url: logoUrl,
         banner_url: bannerUrl,
       };
@@ -910,13 +952,19 @@ function BusinessDashboardContent() {
 
               <div className="p-5 rounded-2xl bg-[#0d151c] border border-blue-900/50 space-y-1 shadow-md">
                 <div className="flex items-center justify-between text-slate-400 text-xs">
-                  <span>Modo de Atendimento</span>
+                  <span>Métodos de Atendimento</span>
                   <Phone className="w-4 h-4 text-blue-400" />
                 </div>
-                <p className="text-lg font-bold text-blue-400 truncate">
-                  {serviceMode === 'at_customer' ? 'A domicílio' : serviceMode === 'at_location' ? 'No local' : serviceMode === 'online' ? 'Online' : 'Ambos'}
+                <p className="text-sm font-bold text-blue-400 truncate">
+                  {[
+                    servesAtLocation && 'No Local',
+                    servesAtCustomer && 'A Domicílio',
+                    servesOnline && 'Online',
+                  ].filter(Boolean).join(' • ') || 'A Definir'}
                 </p>
-                <span className="text-[11px] text-blue-500/80 font-medium">Raio: {serviceRadiusKm} km</span>
+                <span className="text-[11px] text-blue-500/80 font-medium">
+                  {servesAtCustomer ? `Raio a domicílio: ${serviceRadiusKm} km` : 'Multi-atendimento ativo'}
+                </span>
               </div>
 
               <div className="p-5 rounded-2xl bg-[#0d151c] border border-amber-900/50 space-y-1 shadow-md">
@@ -1023,39 +1071,117 @@ function BusinessDashboardContent() {
                   </div>
                 </div>
 
-                {/* Seção 2: Atendimento e Raio */}
-                <div className="space-y-4 pt-4 border-t border-[#182836]">
-                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                    Modo de Atendimento
-                  </h4>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Como você atende seus clientes?</label>
-                      <select
-                        value={serviceMode}
-                        onChange={(e) => setServiceMode(e.target.value as any)}
-                        className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                      >
-                        <option value="at_customer">A domicílio (vou até o cliente)</option>
-                        <option value="at_location">No meu estabelecimento / loja</option>
-                        <option value="both">Ambos (tenho loja e atendo no local)</option>
-                        <option value="online">100% Online / Todo o Brasil</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Raio de Atendimento (km)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={500}
-                        value={serviceRadiusKm}
-                        onChange={(e) => setServiceRadiusKm(Number(e.target.value))}
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                      />
-                    </div>
+                {/* Seção 2: Atendimento e Raio Multi-Canal */}
+                <div className="space-y-3 pt-4 border-t border-[#182836]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-amber-400" />
+                      Métodos de Atendimento *
+                    </h4>
+                    <span className="text-[11px] text-amber-400 font-medium">
+                      (Marque todas as formas que você atende)
+                    </span>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* No Estabelecimento */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        servesAtLocation
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={servesAtLocation}
+                        onChange={(e) => setServesAtLocation(e.target.checked)}
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Store className="w-3.5 h-3.5 text-blue-400 inline" /> No Estabelecimento
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Loja física / balcão próprio
+                        </span>
+                      </div>
+                    </label>
+
+                    {/* A Domicílio */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        servesAtCustomer
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={servesAtCustomer}
+                        onChange={(e) => setServesAtCustomer(e.target.checked)}
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400 inline" /> A Domicílio
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Vou até a casa/empresa do cliente
+                        </span>
+                      </div>
+                    </label>
+
+                    {/* 100% Online */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        servesOnline
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={servesOnline}
+                        onChange={(e) => setServesOnline(e.target.checked)}
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Globe className="w-3.5 h-3.5 text-amber-400 inline" /> Online / Nacional
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Atendimento remoto / todo o Brasil
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Se atende a domicílio, exibe campo para configurar o raio de deslocamento */}
+                  {servesAtCustomer && (
+                    <div className="p-3 rounded-xl bg-[#091118] border border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div>
+                        <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                          Raio Atendido a Domicílio
+                        </span>
+                        <p className="text-[11px] text-slate-400">
+                          Distância máxima em quilômetros atendida a partir do seu endereço
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={serviceRadiusKm}
+                          onChange={(e) => setServiceRadiusKm(Number(e.target.value))}
+                          className="w-24 px-3 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm text-center font-bold"
+                        />
+                        <span className="text-xs text-slate-300 font-medium">km</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Seção 3: Campos Sensíveis (Reabrem Triagem) */}

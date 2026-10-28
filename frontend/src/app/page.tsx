@@ -32,6 +32,7 @@ import {
   Award, 
   Store, 
   FileText,
+  Globe,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -123,12 +124,16 @@ export default function HomePage() {
   const [applicationForm, setApplicationForm] = useState({
     name: '',
     category_slug: 'eletricista',
+    custom_category: '',
     document_number: '',
     whatsapp: '',
     neighborhood: '',
     city: '',
     state: 'SP',
     service_mode: 'at_customer' as 'at_customer' | 'at_location' | 'both' | 'online',
+    serves_at_location: true,
+    serves_at_customer: true,
+    serves_online: false,
     service_radius_km: 20,
     description: '',
     accepted_manifesto: false,
@@ -320,13 +325,37 @@ export default function HomePage() {
     setApplicationSubmitting(true);
     setApplicationErrorMsg(null);
 
-    const cat = categoriesList.find((c) => c.slug === applicationForm.category_slug);
+    const isCustom = applicationForm.category_slug === 'outra';
+    const cat = isCustom ? null : categoriesList.find((c) => c.slug === applicationForm.category_slug);
     const isUuid = cat?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cat.id);
+
+    if (isCustom && (!applicationForm.custom_category || !applicationForm.custom_category.trim())) {
+      setApplicationErrorMsg("Por favor, digite o nome da sua especialidade ou serviço.");
+      setApplicationSubmitting(false);
+      return;
+    }
+
+    const customName = applicationForm.custom_category?.trim();
 
     // Limpar documento: se vazio, envia null para não disparar validação de checksum
     const rawDoc = applicationForm.document_number?.trim();
     const cleanDoc = rawDoc ? rawDoc.replace(/\D/g, '') : null;
     const docType = cleanDoc && cleanDoc.length === 11 ? 'CPF' : 'CNPJ';
+
+    if (!applicationForm.serves_at_location && !applicationForm.serves_at_customer && !applicationForm.serves_online) {
+      setApplicationErrorMsg('Selecione ao menos um método de atendimento (No Estabelecimento, A Domicílio ou Online).');
+      setApplicationSubmitting(false);
+      return;
+    }
+
+    let effectiveMode: 'at_location' | 'at_customer' | 'both' | 'online' = 'at_location';
+    if (applicationForm.serves_at_customer && applicationForm.serves_at_location) {
+      effectiveMode = 'both';
+    } else if (applicationForm.serves_at_customer) {
+      effectiveMode = 'at_customer';
+    } else if (applicationForm.serves_online && !applicationForm.serves_at_location) {
+      effectiveMode = 'online';
+    }
 
     const payload = {
       name: applicationForm.name.trim(),
@@ -338,11 +367,14 @@ export default function HomePage() {
       neighborhood: applicationForm.neighborhood.trim(),
       city: applicationForm.city.trim() || 'Campinas',
       state: (applicationForm.state.trim() || 'SP').toUpperCase(),
-      service_mode: applicationForm.service_mode,
-      service_radius_km: applicationForm.service_radius_km || 20,
+      service_mode: effectiveMode,
+      serves_at_location: applicationForm.serves_at_location,
+      serves_at_customer: applicationForm.serves_at_customer,
+      serves_online: applicationForm.serves_online,
+      service_radius_km: applicationForm.serves_at_customer ? (applicationForm.service_radius_km || 20) : null,
       category_ids: isUuid && cat ? [cat.id] : [],
       primary_category_id: isUuid && cat ? cat.id : null,
-      proposed_niche: (!isUuid && cat) ? cat.name : null,
+      proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
       show_full_address: false,
     };
 
@@ -380,10 +412,13 @@ export default function HomePage() {
         slug: `${applicationForm.name.toLowerCase().replace(/\s+/g, '-')}-${cleanCity.toLowerCase().replace(/\s+/g, '-')}`,
         description: applicationForm.description,
         listing_type: 'service',
-        service_mode: applicationForm.service_mode,
-        service_radius_km: applicationForm.service_radius_km,
-        category_name: cat ? cat.name : 'Serviços',
-        category_slug: applicationForm.category_slug,
+        service_mode: effectiveMode,
+        serves_at_location: applicationForm.serves_at_location,
+        serves_at_customer: applicationForm.serves_at_customer,
+        serves_online: applicationForm.serves_online,
+        service_radius_km: applicationForm.serves_at_customer ? applicationForm.service_radius_km : undefined,
+        category_name: isCustom ? (customName || 'Serviços') : (cat ? cat.name : 'Serviços'),
+        category_slug: isCustom ? (customName ? customName.toLowerCase().replace(/\s+/g, '-') : 'servicos') : applicationForm.category_slug,
         whatsapp: applicationForm.whatsapp,
         neighborhood: applicationForm.neighborhood,
         city: applicationForm.city.trim() || 'Campinas',
@@ -411,12 +446,16 @@ export default function HomePage() {
         setApplicationForm({
           name: '',
           category_slug: 'eletricista',
+          custom_category: '',
           document_number: '',
           whatsapp: '',
           neighborhood: '',
           city: '',
           state: 'SP',
-          service_mode: 'at_customer',
+          service_mode: 'both',
+          serves_at_location: true,
+          serves_at_customer: true,
+          serves_online: false,
           service_radius_km: 20,
           description: '',
           accepted_manifesto: false,
@@ -805,17 +844,24 @@ export default function HomePage() {
 
                   {/* Conteúdo do Card */}
                   <div className="p-5 space-y-3">
-                    {/* Regra Inegociável 6: Distância ou Raio de Atendimento */}
-                    <div>
-                      {isCustomerService ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-emerald-950/70 text-emerald-300 border border-emerald-800/50">
+                    {/* Selos de Modalidade de Atendimento Multi-Canal */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {(business.serves_at_customer || business.service_mode === 'at_customer' || business.service_mode === 'both') && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-emerald-950/70 text-emerald-300 border border-emerald-800/50" title="Atende a domicílio no cliente">
                           <Navigation className="w-3 h-3 text-emerald-400" />
-                          Atende sua região (raio de {business.service_radius_km || 20} km)
+                          A domicílio ({business.service_radius_km || 20} km)
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-md bg-blue-950/70 text-blue-300 border border-blue-800/50">
+                      )}
+                      {(business.serves_at_location || business.service_mode === 'at_location' || business.service_mode === 'both') && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-950/70 text-blue-300 border border-blue-800/50" title="Atendimento presencial no estabelecimento">
                           <MapPin className="w-3 h-3 text-blue-400" />
-                          {business.distance_km || 2.4} km de você
+                          {business.distance_km ? `${business.distance_km} km` : 'No local'}
+                        </span>
+                      )}
+                      {(business.serves_online || business.service_mode === 'online') && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-amber-950/70 text-amber-300 border border-amber-800/50" title="Atende clientes remotamente ou entrega nacional">
+                          <Globe className="w-3 h-3 text-amber-400" />
+                          Online Nacional
                         </span>
                       )}
                     </div>
@@ -1017,6 +1063,9 @@ export default function HomePage() {
                           {c.name}
                         </option>
                       ))}
+                      <option value="outra" className="font-semibold text-amber-400">
+                        ➕ Outra categoria / Não encontrei meu serviço...
+                      </option>
                     </select>
                   </div>
                   <div>
@@ -1030,6 +1079,26 @@ export default function HomePage() {
                     />
                   </div>
                 </div>
+
+                {applicationForm.category_slug === 'outra' && (
+                  <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/50 space-y-1.5">
+                    <label className="block text-amber-300 font-semibold text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      Qual é o seu serviço ou especialidade? *
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      placeholder="Ex: Adestrador de Cães, Psicólogo, Fisioterapeuta, Fotógrafo, Tatuador..."
+                      value={applicationForm.custom_category || ''}
+                      onChange={(e) => setApplicationForm({ ...applicationForm, custom_category: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-amber-500/60 text-white placeholder-slate-500 focus:border-amber-400 outline-none text-xs"
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      Sua especialidade será cadastrada automaticamente no sistema e avaliada pela curadoria.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">WhatsApp de Atendimento *</label>
@@ -1082,39 +1151,136 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-300 font-medium mb-1">Modo de Atendimento</label>
-                    <select
-                      value={applicationForm.service_mode}
-                      onChange={(e) =>
-                        setApplicationForm({
-                          ...applicationForm,
-                          service_mode: e.target.value as 'at_customer' | 'at_location' | 'both' | 'online',
-                        })
-                      }
-                      className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
+                {/* Métodos de Atendimento Multi-Seleção (Checkboxes) */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <label className="block text-slate-300 font-medium text-sm">
+                      Métodos de Atendimento *
+                    </label>
+                    <span className="text-[11px] text-amber-400 font-medium">
+                      (Selecione todas as formas que você atua)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Checkbox 1: No Estabelecimento */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        applicationForm.serves_at_location
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
                     >
-                      <option value="at_customer">A domicílio (vou até o cliente)</option>
-                      <option value="at_location">No meu estabelecimento</option>
-                      <option value="both">Ambos</option>
-                      <option value="online">100% Online / Nacional</option>
-                    </select>
+                      <input
+                        type="checkbox"
+                        checked={applicationForm.serves_at_location}
+                        onChange={(e) =>
+                          setApplicationForm({
+                            ...applicationForm,
+                            serves_at_location: e.target.checked,
+                          })
+                        }
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Store className="w-3.5 h-3.5 text-blue-400 inline" /> No Estabelecimento
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Atendimento no balcão / loja física
+                        </span>
+                      </div>
+                    </label>
+
+                    {/* Checkbox 2: A Domicílio */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        applicationForm.serves_at_customer
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={applicationForm.serves_at_customer}
+                        onChange={(e) =>
+                          setApplicationForm({
+                            ...applicationForm,
+                            serves_at_customer: e.target.checked,
+                          })
+                        }
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400 inline" /> A Domicílio
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Vou até o cliente na região
+                        </span>
+                      </div>
+                    </label>
+
+                    {/* Checkbox 3: 100% Online */}
+                    <label
+                      className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                        applicationForm.serves_online
+                          ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                          : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={applicationForm.serves_online}
+                        onChange={(e) =>
+                          setApplicationForm({
+                            ...applicationForm,
+                            serves_online: e.target.checked,
+                          })
+                        }
+                        className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                      />
+                      <div className="text-xs leading-tight">
+                        <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                          <Globe className="w-3.5 h-3.5 text-amber-400 inline" /> Online / Nacional
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Atendimento remoto em todo o Brasil
+                        </span>
+                      </div>
+                    </label>
                   </div>
-                  <div>
-                    <label className="block text-slate-300 font-medium mb-1">Raio Atendido (km)</label>
-                    <input
-                      type="number"
-                      value={applicationForm.service_radius_km}
-                      onChange={(e) =>
-                        setApplicationForm({
-                          ...applicationForm,
-                          service_radius_km: Number(e.target.value),
-                        })
-                      }
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                    />
-                  </div>
+
+                  {/* Se atende a domicílio, exibe campo para configurar o raio de deslocamento */}
+                  {applicationForm.serves_at_customer && (
+                    <div className="p-3 rounded-xl bg-[#091118] border border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div>
+                        <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                          Raio Atendido a Domicílio
+                        </span>
+                        <p className="text-[11px] text-slate-400">
+                          Distância máxima que sua equipe se desloca a partir da sua base
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={applicationForm.service_radius_km}
+                          onChange={(e) =>
+                            setApplicationForm({
+                              ...applicationForm,
+                              service_radius_km: Number(e.target.value),
+                            })
+                          }
+                          className="w-24 px-3 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm text-center font-bold"
+                        />
+                        <span className="text-xs text-slate-300 font-medium">km</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

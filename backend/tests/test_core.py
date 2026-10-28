@@ -66,6 +66,56 @@ def test_business_application_schema():
     assert app.name == "Padaria Artesanal"
     assert app.state == "SP"
     assert app.document_type == "CNPJ"
+    assert app.serves_at_location is True
+
+
+def test_business_application_multi_attendance_modes():
+    # 1. Caso com as 3 opções marcadas juntas
+    app_all_three = BusinessApplicationCreate(
+        name="Empresa Multi-Canal",
+        whatsapp="19999998888",
+        neighborhood="Cambuí",
+        city="Campinas",
+        state="SP",
+        serves_at_location=True,
+        serves_at_customer=True,
+        serves_online=True,
+        service_radius_km=30,
+        document_number="12345678000195",
+    )
+    assert app_all_three.serves_at_location is True
+    assert app_all_three.serves_at_customer is True
+    assert app_all_three.serves_online is True
+    assert app_all_three.service_mode == "both"
+
+    # 2. Caso apenas online
+    app_online_only = BusinessApplicationCreate(
+        name="Consultoria 100% Online",
+        whatsapp="19999998888",
+        neighborhood="Centro",
+        city="Campinas",
+        state="SP",
+        serves_at_location=False,
+        serves_at_customer=False,
+        serves_online=True,
+        document_number="12345678000195",
+    )
+    assert app_online_only.serves_online is True
+    assert app_online_only.service_mode == "online"
+
+    # 3. Caso nenhum método selecionado -> deve falhar na validação
+    with pytest.raises(ValueError, match="Selecione ao menos um método de atendimento"):
+        BusinessApplicationCreate(
+            name="Empresa Sem Metodo",
+            whatsapp="19999998888",
+            neighborhood="Centro",
+            city="Campinas",
+            state="SP",
+            serves_at_location=False,
+            serves_at_customer=False,
+            serves_online=False,
+            document_number="12345678000195",
+        )
 
 
 @pytest.mark.anyio
@@ -107,9 +157,9 @@ async def test_otp_security_service():
         def __init__(self):
             self.last_code = None
 
-        async def send_otp(self, phone: str, code: str, business_name: str) -> bool:
+        async def send_otp(self, phone: str, code: str, business_name: str):
             self.last_code = code
-            return True
+            return True, None
 
     mock_provider = MockProvider()
     service = OTPService(provider=mock_provider)

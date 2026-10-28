@@ -19,6 +19,9 @@ export interface Business {
   listing_type: ListingType;
   service_mode: ServiceMode;
   service_radius_km?: number;
+  serves_at_location?: boolean;
+  serves_at_customer?: boolean;
+  serves_online?: boolean;
   category_name: string;
   category_slug: string;
   whatsapp: string;

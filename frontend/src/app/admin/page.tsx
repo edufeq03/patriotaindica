@@ -185,6 +185,9 @@ export default function AdminDashboardPage() {
             description: item.description || '',
             listing_type: item.listing_type || 'service',
             service_mode: item.service_mode || 'at_customer',
+            serves_at_location: item.serves_at_location ?? (item.service_mode === 'at_location' || item.service_mode === 'both'),
+            serves_at_customer: item.serves_at_customer ?? (item.service_mode === 'at_customer' || item.service_mode === 'both'),
+            serves_online: item.serves_online ?? (item.service_mode === 'online'),
             service_radius_km: item.service_radius_km || 20,
             category_name: item.primary_category || 'Serviços',
             category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
@@ -226,7 +229,25 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/v1/categories?include_all=true');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setCategoriesList(data);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('guia_local_categories', JSON.stringify(data));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar categorias do backend:', err);
+    }
+  };
+
   useEffect(() => {
+    fetchCategories();
     if (authSession?.token) {
       fetchTriageQueue();
     }
@@ -1045,18 +1066,20 @@ export default function AdminDashboardPage() {
                             Raio e Modo de Atendimento
                           </span>
                           <p className="text-slate-300 text-[11px]">
-                            Modo:{' '}
+                            Modos:{' '}
                             <strong className="text-white">
-                              {selectedBusiness.service_mode === 'at_customer'
-                                ? 'A domicílio'
-                                : selectedBusiness.service_mode === 'at_location'
-                                ? 'Presencial'
-                                : 'Ambos'}
+                              {[
+                                (selectedBusiness.serves_at_location || selectedBusiness.service_mode === 'at_location' || selectedBusiness.service_mode === 'both') && 'No Estabelecimento',
+                                (selectedBusiness.serves_at_customer || selectedBusiness.service_mode === 'at_customer' || selectedBusiness.service_mode === 'both') && 'A Domicílio',
+                                (selectedBusiness.serves_online || selectedBusiness.service_mode === 'online') && '100% Online',
+                              ].filter(Boolean).join(' • ') || 'Presencial'}
                             </strong>
                           </p>
-                          <p className="text-slate-300 text-[11px]">
-                            Raio coberto: <strong className="text-emerald-400">{selectedBusiness.service_radius_km || 20} km</strong>
-                          </p>
+                          {(selectedBusiness.serves_at_customer || selectedBusiness.service_mode === 'at_customer' || selectedBusiness.service_mode === 'both') && (
+                            <p className="text-slate-300 text-[11px]">
+                              Raio coberto a domicílio: <strong className="text-emerald-400">{selectedBusiness.service_radius_km || 20} km</strong>
+                            </p>
+                          )}
                         </div>
 
                         {/* 4. Coordenadas e Geocoding */}
@@ -1191,7 +1214,7 @@ export default function AdminDashboardPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const cat = INITIAL_CATEGORIES.find(c => c.slug === assistedForm.category_slug);
+                const cat = categoriesList.find(c => c.slug === assistedForm.category_slug);
                 const newSeeded: Business = {
                   id: `seed-${Date.now()}`,
                   name: assistedForm.name,
@@ -1244,7 +1267,7 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setAssistedForm({ ...assistedForm, category_slug: e.target.value })}
                     className="w-full px-3 py-2.5 bg-[#070b0e] border border-[#182836] rounded-xl text-white focus:border-blue-500 outline-none"
                   >
-                    {INITIAL_CATEGORIES.map((c) => (
+                    {categoriesList.map((c) => (
                       <option key={c.id} value={c.slug}>
                         {c.name}
                       </option>
@@ -1509,9 +1532,46 @@ export default function AdminDashboardPage() {
               </div>
 
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
                   if (!newCatName.trim()) return;
+
+                  if (authSession?.token) {
+                    try {
+                      const res = await fetch('/api/v1/categories', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${authSession.token}`,
+                        },
+                        body: JSON.stringify({
+                          name: newCatName.trim(),
+                          kind: newCatKind,
+                          icon_name: newCatIcon,
+                          display_order: categoriesList.length + 1,
+                        }),
+                      });
+
+                      if (res.ok) {
+                        const savedCat = await res.json();
+                        const updated = [...categoriesList, savedCat];
+                        setCategoriesList(updated);
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('guia_local_categories', JSON.stringify(updated));
+                        }
+                        setCatSuccessMsg(`Categoria "${savedCat.name}" gravada com sucesso no banco de dados!`);
+                        setNewCatName('');
+                        setTimeout(() => setCatSuccessMsg(null), 3500);
+                        return;
+                      } else {
+                        const errData = await res.json().catch(() => null);
+                        alert(errData?.detail || 'Erro ao salvar categoria no banco de dados.');
+                        return;
+                      }
+                    } catch (err) {
+                      console.error('Erro ao conectar ao backend:', err);
+                    }
+                  }
 
                   const slug = newCatName
                     .toLowerCase()
@@ -1534,7 +1594,7 @@ export default function AdminDashboardPage() {
                   if (typeof window !== 'undefined') {
                     localStorage.setItem('guia_local_categories', JSON.stringify(updated));
                   }
-                  setCatSuccessMsg(`Categoria "${newCat.name}" criada com sucesso! Já disponível no catálogo.`);
+                  setCatSuccessMsg(`Categoria "${newCat.name}" criada localmente.`);
                   setNewCatName('');
                   setTimeout(() => setCatSuccessMsg(null), 3500);
                 }}
@@ -1638,8 +1698,26 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <button
-                      onClick={() => {
-                        if (confirm(`Remover a categoria "${cat.name}"?`)) {
+                      onClick={async () => {
+                        if (confirm(`Remover ou desativar a categoria "${cat.name}"?`)) {
+                          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cat.id);
+                          if (authSession?.token && isUuid) {
+                            try {
+                              const res = await fetch(`/api/v1/categories/${cat.id}`, {
+                                method: 'DELETE',
+                                headers: {
+                                  Authorization: `Bearer ${authSession.token}`,
+                                },
+                              });
+                              if (!res.ok) {
+                                const errData = await res.json().catch(() => null);
+                                alert(errData?.detail || 'Erro ao remover categoria no banco.');
+                                return;
+                              }
+                            } catch (e) {
+                              console.error('Erro na requisição de exclusão:', e);
+                            }
+                          }
                           const updated = categoriesList.filter((c) => c.id !== cat.id);
                           setCategoriesList(updated);
                           if (typeof window !== 'undefined') {

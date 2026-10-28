@@ -162,4 +162,77 @@ def test_search_endpoint_success_with_mock_db():
         app.dependency_overrides.pop(get_db, None)
 
 
+def test_list_categories_endpoint_success():
+    """Garante que /api/v1/categories responde 200."""
+    async def override_get_db():
+        mock_db = AsyncMock()
+        mock_scalar = MagicMock()
+        mock_scalar.scalars.return_value.all.return_value = []
+        mock_db.execute.return_value = mock_scalar
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = client.get("/api/v1/categories")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_admin_create_category_requires_auth():
+    """Criação direta de categoria sem token de admin é rejeitada com 401."""
+    response = client.post("/api/v1/categories", json={"name": "Adestrador de Cães", "kind": "service"})
+    assert response.status_code in (401, 403)
+
+
+def test_admin_create_category_success_with_mock():
+    """Admin autenticado consegue cadastrar categoria diretamente."""
+    from backend.app.core.security import get_current_active_admin
+    from backend.app.models.user import User
+    from uuid import uuid4
+
+    mock_admin = User(
+        id=uuid4(),
+        name="Admin Test",
+        email="admin@patriotaindica.com.br",
+        role="admin",
+        is_active=True,
+    )
+
+    async def override_admin():
+        return mock_admin
+
+    async def override_get_db():
+        mock_db = AsyncMock()
+        mock_scalar = MagicMock()
+        mock_scalar.scalar_one_or_none.return_value = None
+        mock_db.execute.return_value = mock_scalar
+
+        async def mock_refresh(instance):
+            instance.id = uuid4()
+            from datetime import datetime, timezone
+            instance.created_at = datetime.now(timezone.utc)
+
+        mock_db.refresh = mock_refresh
+        yield mock_db
+
+    app.dependency_overrides[get_current_active_admin] = override_admin
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        response = client.post(
+            "/api/v1/categories",
+            json={"name": "Adestrador de Cães", "kind": "service", "icon_name": "paw-print"},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Adestrador de Cães"
+        assert data["status"] == "approved"
+        assert "adestrador" in data["slug"]
+    finally:
+        app.dependency_overrides.pop(get_current_active_admin, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+
 

@@ -57,6 +57,9 @@ class Business(Base):
     geocode_confidence = Column(Float, nullable=True)
     service_mode = Column(service_mode_enum, nullable=False, default="at_location")  # 'at_location', 'at_customer', 'both', 'online'
     service_radius_km = Column(Integer, nullable=True)
+    serves_at_location = Column(Boolean, nullable=False, default=True)
+    serves_at_customer = Column(Boolean, nullable=False, default=False)
+    serves_online = Column(Boolean, nullable=False, default=False)
 
     # Mídia
     logo_url = Column(Text, nullable=True)

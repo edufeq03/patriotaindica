@@ -14,6 +14,7 @@ from backend.app.models.business import BusinessCategory
 from backend.app.models.category import Category, CategoryAlias
 from backend.app.models.user import User
 from backend.app.schemas.category import (
+    CategoryAdminCreate,
     CategoryModerationAction,
     CategoryOut,
     CategoryProposalCreate,
@@ -32,17 +33,20 @@ def slugify_category(text: str) -> str:
 @router.get("", response_model=List[CategoryOut])
 async def list_categories(
     kind: Optional[str] = Query(None, description="'service', 'product', ou 'both'"),
+    include_all: bool = Query(False, description="Se True, inclui todas as categorias exceto arquivadas"),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Lista apenas categorias APROVADAS para o catálogo público e filtros da home.
-    Categorias em análise ('pending') ou rejeitadas NUNCA aparecem aqui.
+    Lista categorias para o catálogo público e filtros da home.
+    Por padrão retorna apenas status='approved'.
+    Com include_all=True retorna todas que não estão 'archived'.
     """
-    stmt = (
-        select(Category)
-        .where(Category.status == "approved")
-        .order_by(Category.display_order.asc(), Category.name.asc())
-    )
+    stmt = select(Category).order_by(Category.display_order.asc(), Category.name.asc())
+
+    if include_all:
+        stmt = stmt.where(Category.status != "archived")
+    else:
+        stmt = stmt.where(Category.status == "approved")
 
     if kind and kind in ("service", "product"):
         stmt = stmt.where((Category.kind == kind) | (Category.kind == "both"))
@@ -235,3 +239,77 @@ async def moderate_category(
         return {"success": True, "action": "rejected", "category_id": category.id}
 
     raise HTTPException(status_code=400, detail="Ação inválida.")
+
+
+@router.post("", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
+async def create_category(
+    payload: CategoryAdminCreate,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
+):
+    """
+    Criação direta de categoria pelo Administrador no PostgreSQL com status 'approved'.
+    """
+    clean_name = payload.name.strip()
+    base_slug = slugify_category(clean_name)
+    slug = base_slug
+    attempts = 0
+    while attempts < 5:
+        stmt = select(Category.id).where(Category.slug == slug)
+        exists = (await db.execute(stmt)).scalar_one_or_none()
+        if not exists:
+            break
+        slug = f"{base_slug}-{secrets.token_hex(2)}"
+        attempts += 1
+
+    new_cat = Category(
+        name=clean_name,
+        slug=slug,
+        kind=payload.kind,
+        icon_name=payload.icon_name or "wrench",
+        display_order=payload.display_order or 0,
+        status="approved",
+    )
+    db.add(new_cat)
+    await db.commit()
+    await db.refresh(new_cat)
+    return new_cat
+
+
+@router.delete("/{category_id}", status_code=status.HTTP_200_OK)
+async def delete_category(
+    category_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
+):
+    """
+    Exclusão / Desativação de categoria pelo Administrador.
+    Se houver empresas vinculadas, desativa marcando status='archived' para manter integridade.
+    Se não houver empresas vinculadas, remove fisicamente do banco.
+    """
+    stmt = select(Category).where(Category.id == category_id)
+    category = (await db.execute(stmt)).scalar_one_or_none()
+    if not category:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+
+    # Verificar vínculos com empresas
+    biz_stmt = select(func.count()).select_from(BusinessCategory).where(BusinessCategory.category_id == category_id)
+    linked_count = (await db.execute(biz_stmt)).scalar() or 0
+
+    if linked_count > 0:
+        category.status = "archived"
+        await db.commit()
+        return {
+            "success": True,
+            "message": f"Categoria desativada (arquivada), pois está vinculada a {linked_count} empresa(s).",
+            "archived": True,
+        }
+    else:
+        await db.delete(category)
+        await db.commit()
+        return {
+            "success": True,
+            "message": "Categoria removida com sucesso.",
+            "archived": False,
+        }
+

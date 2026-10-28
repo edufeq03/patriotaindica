@@ -30,6 +30,9 @@ class BusinessBase(BaseModel):
 
     service_mode: Literal["at_location", "at_customer", "both", "online"] = "at_location"
     service_radius_km: Optional[int] = None
+    serves_at_location: bool = True
+    serves_at_customer: bool = False
+    serves_online: bool = False
 
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
@@ -49,6 +52,9 @@ class BusinessPublicCard(BaseModel):
     listing_type: str
     service_mode: str
     service_radius_km: Optional[int] = None
+    serves_at_location: Optional[bool] = True
+    serves_at_customer: Optional[bool] = False
+    serves_online: Optional[bool] = False
     category_name: Optional[str] = None
     neighborhood: str
     city: str
@@ -75,6 +81,9 @@ class BusinessDetail(BaseModel):
     listing_type: str
     service_mode: str
     service_radius_km: Optional[int] = None
+    serves_at_location: Optional[bool] = True
+    serves_at_customer: Optional[bool] = False
+    serves_online: Optional[bool] = False
     whatsapp: Optional[str] = None
     phone: Optional[str] = None
     website: Optional[str] = None
@@ -120,8 +129,11 @@ class BusinessApplicationCreate(BaseModel):
     state: str = Field(..., min_length=2, max_length=2)
     postal_code: Optional[str] = Field(None, max_length=10)
     show_full_address: bool = False
-    service_mode: Literal["at_location", "at_customer", "both", "online"] = "at_location"
+    service_mode: Optional[Literal["at_location", "at_customer", "both", "online"]] = "at_location"
     service_radius_km: Optional[int] = Field(None, ge=1, le=500)
+    serves_at_location: bool = True
+    serves_at_customer: bool = False
+    serves_online: bool = False
     category_ids: List[UUID] = Field(default_factory=list, max_length=3)
     primary_category_id: Optional[UUID] = None
     # Campo para propor novo nicho dinâmico (Sec. 4)
@@ -173,9 +185,39 @@ class BusinessApplicationCreate(BaseModel):
         return digits
 
     @model_validator(mode="after")
-    def check_honeypot(self) -> "BusinessApplicationCreate":
+    def validate_attendance_and_honeypot(self) -> "BusinessApplicationCreate":
         if self.website_url_hp and self.website_url_hp.strip():
             raise ValueError("Acesso não permitido (spam detectado).")
+
+        # Se o chamador forneceu os campos booleanos de atendimento explicitamente:
+        attendance_fields = {"serves_at_location", "serves_at_customer", "serves_online"}
+        if attendance_fields.intersection(self.model_fields_set):
+            if not (self.serves_at_location or self.serves_at_customer or self.serves_online):
+                raise ValueError("Selecione ao menos um método de atendimento.")
+        else:
+            # Chamador legado (baseado apenas em service_mode)
+            if self.service_mode == "at_customer":
+                self.serves_at_customer = True
+                self.serves_at_location = False
+            elif self.service_mode == "both":
+                self.serves_at_location = True
+                self.serves_at_customer = True
+            elif self.service_mode == "online":
+                self.serves_online = True
+                self.serves_at_location = False
+            else:
+                self.serves_at_location = True
+
+        # Sincronizar service_mode
+        if self.serves_at_customer and self.serves_at_location:
+            self.service_mode = "both"
+        elif self.serves_at_customer:
+            self.service_mode = "at_customer"
+        elif self.serves_online and not self.serves_at_location:
+            self.service_mode = "online"
+        else:
+            self.service_mode = "at_location"
+
         return self
 
 

@@ -114,6 +114,9 @@ async def search_nearby_businesses(
             "listing_type": b.listing_type,
             "service_mode": b.service_mode,
             "service_radius_km": b.service_radius_km,
+            "serves_at_location": getattr(b, "serves_at_location", True),
+            "serves_at_customer": getattr(b, "serves_at_customer", False),
+            "serves_online": getattr(b, "serves_online", False),
             "category_name": c_name,
             "category_slug": c_slug,
             "whatsapp": b.whatsapp,
@@ -129,7 +132,7 @@ async def search_nearby_businesses(
             "is_verified": b.is_verified,
             "distance_km": None,
             "status": "approved",
-            "serves_customer_location": b.service_mode in ("at_customer", "both"),
+            "serves_customer_location": getattr(b, "serves_at_customer", False) or b.service_mode in ("at_customer", "both"),
         })
 
     return {

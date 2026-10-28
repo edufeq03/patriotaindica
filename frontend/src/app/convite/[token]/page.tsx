@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { 
@@ -12,14 +12,18 @@ import {
   MapPin, 
   Phone, 
   Clock, 
-  ArrowLeft,
-  Star,
-  Award,
-  ArrowRight,
-  FileText
+  ArrowLeft, 
+  Star, 
+  Award, 
+  ArrowRight, 
+  FileText,
+  Store,
+  Navigation,
+  Globe
 } from 'lucide-react';
 import { Suspense } from 'react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES } from '@/lib/mockData';
+import { Category } from '@/lib/types';
 import ManifestoModal, { MANIFESTO_VERSION } from '@/components/ManifestoModal';
 
 export default function InvitationPage() {
@@ -36,6 +40,18 @@ function InvitationContent() {
   const token = params?.token as string;
 
   const [showManifestoModal, setShowManifestoModal] = useState(false);
+  const [categoriesList, setCategoriesList] = useState<Category[]>(INITIAL_CATEGORIES);
+
+  useEffect(() => {
+    fetch('/api/v1/categories')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCategoriesList(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Mock de dados pré-preenchidos a partir do convite gerado
   const [formData, setFormData] = useState({
@@ -43,10 +59,14 @@ function InvitationContent() {
     businessName: 'Silva Instalações e Eletricista 24h',
     whatsapp: '19987654321',
     category: 'eletricista',
+    custom_category: '',
     neighborhood: 'Centro',
     city: 'Campinas',
     state: 'SP',
     service_mode: 'at_customer',
+    serves_at_location: true,
+    serves_at_customer: true,
+    serves_online: false,
     service_radius_km: 25,
     description: 'Especialista em reformas elétricas, quadros de distribuição e laudos técnicos.',
     instagram: 'silvaeletrica_campinas',
@@ -172,14 +192,34 @@ function InvitationContent() {
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
                 >
-                  {INITIAL_CATEGORIES.map((c) => (
+                  {categoriesList.map((c) => (
                     <option key={c.id} value={c.slug}>
                       {c.name}
                     </option>
                   ))}
+                  <option value="outra" className="font-semibold text-amber-400">
+                    ➕ Outra categoria / Não encontrei meu serviço...
+                  </option>
                 </select>
               </div>
             </div>
+
+            {formData.category === 'outra' && (
+              <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/50 space-y-1.5">
+                <label className="block text-amber-300 font-semibold text-xs flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Qual é o seu serviço ou especialidade? *
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="Ex: Adestrador de Cães, Psicólogo, Fisioterapeuta, Fotógrafo..."
+                  value={formData.custom_category || ''}
+                  onChange={(e) => setFormData({ ...formData, custom_category: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-amber-500/60 text-white placeholder-slate-500 focus:border-amber-400 outline-none text-xs"
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -204,29 +244,130 @@ function InvitationContent() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Modo de Atendimento</label>
-                <select
-                  value={formData.service_mode}
-                  onChange={(e) => setFormData({ ...formData, service_mode: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                >
-                  <option value="at_customer">A domicílio (vou até o cliente)</option>
-                  <option value="at_location">No meu estabelecimento</option>
-                  <option value="both">Ambos</option>
-                </select>
+            {/* Métodos de Atendimento Multi-Seleção (Checkboxes) */}
+            <div className="space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <label className="block text-slate-300 font-semibold text-sm">
+                  Métodos de Atendimento *
+                </label>
+                <span className="text-[11px] text-amber-400 font-medium">
+                  (Marque todas as formas que você atua)
+                </span>
               </div>
 
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Raio de Atendimento (km)</label>
-                <input
-                  type="number"
-                  value={formData.service_radius_km}
-                  onChange={(e) => setFormData({ ...formData, service_radius_km: Number(e.target.value) })}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* No Estabelecimento */}
+                <label
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                    formData.serves_at_location
+                      ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                      : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.serves_at_location}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        serves_at_location: e.target.checked,
+                      })
+                    }
+                    className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                  />
+                  <div className="text-xs leading-tight">
+                    <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                      <Store className="w-3.5 h-3.5 text-blue-400 inline" /> No Estabelecimento
+                    </span>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">
+                      Balcão / loja física
+                    </span>
+                  </div>
+                </label>
+
+                {/* A Domicílio */}
+                <label
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                    formData.serves_at_customer
+                      ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                      : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.serves_at_customer}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        serves_at_customer: e.target.checked,
+                      })
+                    }
+                    className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                  />
+                  <div className="text-xs leading-tight">
+                    <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                      <Navigation className="w-3.5 h-3.5 text-emerald-400 inline" /> A Domicílio
+                    </span>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">
+                      Vou até o cliente
+                    </span>
+                  </div>
+                </label>
+
+                {/* 100% Online */}
+                <label
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
+                    formData.serves_online
+                      ? 'bg-amber-500/10 border-amber-500/70 text-white shadow-sm ring-1 ring-amber-500/30'
+                      : 'bg-[#070b0e] border-[#182836] text-slate-400 hover:border-slate-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={formData.serves_online}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        serves_online: e.target.checked,
+                      })
+                    }
+                    className="mt-0.5 accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                  />
+                  <div className="text-xs leading-tight">
+                    <span className="font-semibold block text-slate-100 flex items-center gap-1">
+                      <Globe className="w-3.5 h-3.5 text-amber-400 inline" /> Online / Nacional
+                    </span>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">
+                      Remoto / Todo o Brasil
+                    </span>
+                  </div>
+                </label>
               </div>
+
+              {formData.serves_at_customer && (
+                <div className="p-3 rounded-xl bg-[#091118] border border-emerald-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div>
+                    <span className="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                      <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                      Raio Atendido a Domicílio
+                    </span>
+                    <p className="text-[11px] text-slate-400">
+                      Distância máxima percorrida até o cliente a partir da sua base
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={formData.service_radius_km}
+                      onChange={(e) => setFormData({ ...formData, service_radius_km: Number(e.target.value) })}
+                      className="w-24 px-3 py-1.5 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm text-center font-bold"
+                    />
+                    <span className="text-xs text-slate-300 font-medium">km</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

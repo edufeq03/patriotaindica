@@ -217,21 +217,32 @@ export default function BusinessProfileView({ business, city, category, slug }: 
               </div>
             </div>
 
-            {/* Atendimento e Raio */}
-            <div className="pt-4 border-t border-[#182836] flex flex-wrap gap-4 text-xs md:text-sm text-slate-300">
-              <div className="flex items-center gap-2 bg-[#070b0e] px-3.5 py-2 rounded-xl border border-[#182836]">
-                <Navigation className="w-4 h-4 text-emerald-400" />
-                <span>
-                  Modo de Atendimento:{' '}
-                  <strong className="text-white">
-                    {business.service_mode === 'at_customer'
-                      ? `Atende a domicílio (Raio de ${business.service_radius_km || 25} km)`
-                      : business.service_mode === 'at_location'
-                      ? 'Atendimento presencial no estabelecimento'
-                      : `Presencial e a domicílio (Raio de ${business.service_radius_km || 15} km)`}
-                  </strong>
-                </span>
-              </div>
+            {/* Atendimento e Raio Multi-Canal */}
+            <div className="pt-4 border-t border-[#182836] flex flex-wrap gap-3 text-xs md:text-sm text-slate-300">
+              {(business.serves_at_location || business.service_mode === 'at_location' || business.service_mode === 'both') && (
+                <div className="flex items-center gap-2 bg-[#070b0e] px-3.5 py-2 rounded-xl border border-blue-500/30">
+                  <Building2 className="w-4 h-4 text-blue-400" />
+                  <span>
+                    No Local: <strong className="text-white">Estabelecimento Próprio</strong>
+                  </span>
+                </div>
+              )}
+              {(business.serves_at_customer || business.service_mode === 'at_customer' || business.service_mode === 'both') && (
+                <div className="flex items-center gap-2 bg-[#070b0e] px-3.5 py-2 rounded-xl border border-emerald-500/30">
+                  <Navigation className="w-4 h-4 text-emerald-400" />
+                  <span>
+                    A Domicílio: <strong className="text-white">Raio de {business.service_radius_km || 20} km</strong>
+                  </span>
+                </div>
+              )}
+              {(business.serves_online || business.service_mode === 'online') && (
+                <div className="flex items-center gap-2 bg-[#070b0e] px-3.5 py-2 rounded-xl border border-amber-500/30">
+                  <Globe className="w-4 h-4 text-amber-400" />
+                  <span>
+                    Atendimento: <strong className="text-white">100% Online / Nacional</strong>
+                  </span>
+                </div>
+              )}
               <div className="flex items-center gap-2 bg-[#070b0e] px-3.5 py-2 rounded-xl border border-[#182836]">
                 <Clock className="w-4 h-4 text-amber-400" />
                 <span>Resposta Rápida no WhatsApp</span>

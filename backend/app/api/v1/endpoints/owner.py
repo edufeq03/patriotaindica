@@ -37,6 +37,9 @@ class BusinessOwnerUpdate(BaseModel):
     show_full_address: Optional[bool] = None
     service_mode: Optional[Literal["at_location", "at_customer", "both", "online"]] = None
     service_radius_km: Optional[int] = Field(None, ge=1, le=500)
+    serves_at_location: Optional[bool] = None
+    serves_at_customer: Optional[bool] = None
+    serves_online: Optional[bool] = None
     logo_url: Optional[str] = None
     banner_url: Optional[str] = None
 
@@ -88,6 +91,9 @@ async def get_my_businesses(
             "listing_type": b.listing_type,
             "service_mode": b.service_mode,
             "service_radius_km": b.service_radius_km,
+            "serves_at_location": getattr(b, "serves_at_location", True),
+            "serves_at_customer": getattr(b, "serves_at_customer", False),
+            "serves_online": getattr(b, "serves_online", False),
             "whatsapp": b.whatsapp,
             "phone": b.phone,
             "website": b.website,
@@ -180,6 +186,20 @@ async def update_business_profile(
         if key in sensitive_keys and val:
             reopened = True
 
+    # Sincronizar service_mode a partir dos booleanos se foram modificados
+    if any(k in changes for k in ("serves_at_location", "serves_at_customer", "serves_online")):
+        cust = bool(business.serves_at_customer)
+        loc = bool(business.serves_at_location)
+        onl = bool(business.serves_online)
+        if cust and loc:
+            business.service_mode = "both"
+        elif cust:
+            business.service_mode = "at_customer"
+        elif onl and not loc:
+            business.service_mode = "online"
+        else:
+            business.service_mode = "at_location"
+
     if reopened and business.status == "approved":
         business.status = "pending_review"
 
@@ -208,6 +228,9 @@ async def update_business_profile(
             "state": business.state,
             "service_mode": business.service_mode,
             "service_radius_km": business.service_radius_km,
+            "serves_at_location": getattr(business, "serves_at_location", True),
+            "serves_at_customer": getattr(business, "serves_at_customer", False),
+            "serves_online": getattr(business, "serves_online", False),
             "logo_url": business.logo_url,
             "banner_url": business.banner_url,
             "status": business.status,

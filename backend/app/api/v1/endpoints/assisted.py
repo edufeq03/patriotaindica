@@ -121,6 +121,9 @@ async def import_businesses_csv(
                 geocode_confidence=geo_conf,
                 service_mode=valid_app.service_mode,
                 service_radius_km=valid_app.service_radius_km,
+                serves_at_location=valid_app.serves_at_location,
+                serves_at_customer=valid_app.serves_at_customer,
+                serves_online=valid_app.serves_online,
                 status="pending_review",  # REGRA: SEMPRE PENDENTE DE CURADORIA
                 source="csv_assisted",
                 is_verified=False,
