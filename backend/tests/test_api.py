@@ -4,6 +4,9 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.core.database import get_db
+from backend.app.core.security import get_current_user
+from backend.app.models.user import User
+from backend.app.models.business import Business
 
 client = TestClient(app)
 
@@ -321,11 +324,9 @@ def test_simulate_activation_and_my_subscription():
     app.dependency_overrides[get_current_user] = override_user
     app.dependency_overrides[get_db] = override_get_db_activate
     try:
+        # T0.1 / T0.6: Endpoint simulate-activation apagado e DEVE retornar 404
         res_act = client.post("/api/v1/payments/simulate-activation?plan_id=anual")
-        assert res_act.status_code == 200
-        data = res_act.json()
-        assert data["success"] is True
-        assert "ativada com sucesso" in data["message"]
+        assert res_act.status_code == 404
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_db, None)
@@ -454,7 +455,8 @@ def test_request_otp_by_phone_success_and_contingency():
         assert data["success"] is True
         assert data["business_id"] == str(test_id)
         assert data["business_name"] == "UltraLimpCampinas"
-        assert "dev_code" in data
+        # T0.6: dev_code NUNCA deve ser retornado na resposta HTTP
+        assert "dev_code" not in data
 
         # 2. Resiliência: se o número não for encontrado, retorna 404 amigável
         mock_row_empty = MagicMock()
@@ -470,3 +472,94 @@ def test_request_otp_by_phone_success_and_contingency():
         assert "Nenhuma empresa encontrada" in res_nf.json()["detail"]
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_dangerous_endpoints_removed_return_404():
+    """
+    T0.1: Nenhuma das rotas perigosas deve existir no sistema (todas devem retornar 404).
+    """
+    assert client.get("/api/v1/system/migrate").status_code == 404
+    assert client.post("/api/v1/triage/reset-businesses").status_code == 404
+    assert client.get("/api/v1/triage/test-evolution").status_code == 404
+    assert client.get("/api/v1/search/audit").status_code == 404
+    assert client.post("/api/v1/payments/simulate-activation").status_code == 404
+
+
+def test_public_by_slug_returns_404_for_pending_business():
+    """
+    T0.5: by-slug só deve retornar empresas com status = 'approved'.
+    Empresas com status = 'pending_review' devem retornar 404 na rota pública.
+    """
+    async def override_get_db_pending():
+        mock_db = AsyncMock()
+        mock_res = MagicMock()
+        mock_res.scalar_one_or_none.return_value = None  # query filtra status='approved', logo não acha
+        mock_db.execute.return_value = mock_res
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_pending
+    try:
+        res = client.get("/api/v1/businesses/by-slug/empresa-em-analise")
+        assert res.status_code == 404
+        assert "não encontrada ou inativa" in res.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_toggle_business_pause_forbids_pending_status():
+    """
+    T0.6: toggle-pause não aprova empresas em pending_review nem reativa suspensas sem admin.
+    """
+    owner_user = User(id=uuid4(), name="Dono", email="dono@teste.com", role="owner", is_active=True)
+    pending_biz = Business(
+        id=uuid4(),
+        owner_user_id=owner_user.id,
+        name="Empresa Pendente",
+        slug="empresa-pendente",
+        status="pending_review",
+    )
+
+    async def override_user():
+        return owner_user
+
+    async def override_get_db_toggle():
+        mock_db = AsyncMock()
+        mock_res = MagicMock()
+        mock_res.scalar_one_or_none.return_value = pending_biz
+        mock_db.execute.return_value = mock_res
+        yield mock_db
+
+    app.dependency_overrides[get_current_user] = override_user
+    app.dependency_overrides[get_db] = override_get_db_toggle
+    try:
+        res = client.post(f"/api/v1/owner/{pending_biz.id}/toggle-pause")
+        assert res.status_code == 400
+        assert "Apenas empresas aprovadas podem ser pausadas" in res.json()["detail"]
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_privacy_request_endpoint_201_and_rate_limit_429():
+    """
+    T0.7: POST /api/v1/privacy/request retorna 201 e aplica rate limit 429 na 11ª chamada/hora.
+    """
+    async def override_get_db_privacy():
+        mock_db = AsyncMock()
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_privacy
+    try:
+        payload = {
+            "request_type": "deletion",
+            "email": "titular@exemplo.com",
+            "details": "Solicito exclusão dos meus dados cadastrais.",
+        }
+        res = client.post("/api/v1/privacy/request", json=payload, headers={"X-Forwarded-For": "203.0.113.195"})
+        assert res.status_code == 201
+        data = res.json()
+        assert data["request_type"] == "deletion"
+        assert data["status"] == "received"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+

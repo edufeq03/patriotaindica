@@ -80,24 +80,11 @@ async def request_otp_by_phone(
         success = False
         message = str(e)
 
-    # Resiliência: se o gateway externo de WhatsApp falhar ou não estiver conectado,
-    # provisiona código de contingência em memória para que o lojista NUNCA fique bloqueado
     if not success:
-        logger.warning("Ativando código de contingência para WhatsApp %s: %s", target_whatsapp, message)
-        raw_code = "123456"
-        salt = secrets.token_hex(16)
-        hashed = otp_service._hash_code(raw_code, salt)
-        otp_service._cache[f"claim:{target_id}"] = {
-            "hash": hashed,
-            "salt": salt,
-            "raw_code": raw_code,
-            "attempts": 0,
-            "expires_at": time.time() + 300,
-        }
-        dev_code = "123456"
-        message = "Código de acesso pronto! Utilize o código de verificação para continuar."
-    else:
-        dev_code = otp_service.get_dev_code(str(target_id))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=message or "Não foi possível enviar o código via WhatsApp. Tente novamente mais tarde.",
+        )
 
     return {
         "success": True,
@@ -105,7 +92,6 @@ async def request_otp_by_phone(
         "business_id": str(target_id),
         "business_name": target_name,
         "masked_phone": otp_service.mask_phone(target_whatsapp),
-        "dev_code": dev_code,
         "expires_in_seconds": 300,
     }
 
@@ -142,27 +128,15 @@ async def request_claim_otp(
         message = str(e)
 
     if not success:
-        logger.warning("Ativando código de contingência para claim OTP: %s", b_whatsapp)
-        raw_code = "123456"
-        salt = secrets.token_hex(16)
-        hashed = otp_service._hash_code(raw_code, salt)
-        otp_service._cache[f"claim:{b_id}"] = {
-            "hash": hashed,
-            "salt": salt,
-            "raw_code": raw_code,
-            "attempts": 0,
-            "expires_at": time.time() + 300,
-        }
-        dev_code = "123456"
-        message = "Código de acesso pronto! Utilize o código de verificação para continuar."
-    else:
-        dev_code = otp_service.get_dev_code(str(b_id))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=message or "Não foi possível enviar o código via WhatsApp. Tente novamente mais tarde.",
+        )
 
     return {
         "success": True,
         "message": message,
         "masked_phone": otp_service.mask_phone(b_whatsapp),
-        "dev_code": dev_code,
         "expires_in_seconds": 300,
     }
 
@@ -237,8 +211,6 @@ async def verify_claim_otp(
             .where(Business.id == business_id)
             .values(
                 whatsapp_verified_at=now,
-                is_verified=True,
-                status="approved",
                 owner_user_id=owner_user.id,
             )
         )
@@ -251,7 +223,7 @@ async def verify_claim_otp(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Não foi possível concluir a autenticação: {str(exc)}",
+            detail="Não foi possível concluir a autenticação. Tente novamente mais tarde.",
         )
 
     access_token = create_access_token(

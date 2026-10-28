@@ -219,12 +219,10 @@ class OTPService:
         salt = secrets.token_hex(16)
         hashed = self._hash_code(raw_code, salt)
 
-        # 3. Armazena apenas o HASH com TTL de 300 segundos (5 min)
-        # raw_code só fica salvo temporariamente em memória se o provedor for Console (dev/homologação)
+        # 3. Armazena apenas o HASH e salt com TTL de 300 segundos (5 min)
         self._cache[phone_key] = {
             "hash": hashed,
             "salt": salt,
-            "raw_code": raw_code if isinstance(self.provider, ConsoleWhatsAppProvider) else None,
             "attempts": 0,
             "expires_at": time.time() + 300,
         }
@@ -235,12 +233,6 @@ class OTPService:
             return False, err_msg or "Não foi possível enviar a mensagem no WhatsApp. Tente novamente."
 
         return True, "Código enviado com sucesso via WhatsApp."
-
-    def get_dev_code(self, business_id: str) -> Optional[str]:
-        """Retorna o código gerado apenas quando em modo ConsoleWhatsAppProvider."""
-        if isinstance(self.provider, ConsoleWhatsAppProvider):
-            return self._cache.get(f"claim:{business_id}", {}).get("raw_code")
-        return None
 
     def verify_otp(self, business_id: str, submitted_code: str) -> Tuple[bool, str]:
         phone_key = f"claim:{business_id}"
@@ -263,12 +255,7 @@ class OTPService:
         submitted_hash = self._hash_code(submitted_code.strip(), record["salt"])
 
         # Comparação em tempo constante para evitar timing attacks
-        # Aceita o código oficial enviado via WhatsApp ou o código universal de homologação 123456
-        is_match = (
-            secrets.compare_digest(expected_hash, submitted_hash)
-            or submitted_code.strip() == "123456"
-            or (bool(record.get("raw_code")) and submitted_code.strip() == str(record.get("raw_code")).strip())
-        )
+        is_match = secrets.compare_digest(expected_hash, submitted_hash)
         if is_match:
             del self._cache[phone_key]
             return True, "Código validado com sucesso!"

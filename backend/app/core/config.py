@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # JWT Security - C1: Segredo obrigatório com validação rigorosa
-    JWT_SECRET_KEY: str = "patriota_indica_sec_dev_key_64_chars_hex_948f2b7a1e0c45d3a9b8"
+    # JWT Security - C1: Segredo obrigatório sem default com validação rigorosa
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "patriotaindica.com.br"
     JWT_AUDIENCE: str = "patriotaindica-users"
@@ -43,18 +43,17 @@ class Settings(BaseSettings):
     BILLING_MODE: str = "per_owner"  # 'per_owner' ou 'per_business'
     PUBLIC_APP_URL: str = "https://patriotaindica.com"
 
-    # CORS - M1: Restringir origens válidas sem curinga em produção
+    # CORS - M1: Restringir origens válidas sem curinga e com HTTPS em produção
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://patriotaindica.com",
         "https://www.patriotaindica.com",
-        "http://patriotaindica.com",
         "https://patriotaindica.com.br",
         "https://www.patriotaindica.com.br",
     ]
 
-    # Host whitelist
+    # Host whitelist sem curinga aberto '*'
     ALLOWED_HOSTS: List[str] = [
         "localhost",
         "127.0.0.1",
@@ -65,16 +64,22 @@ class Settings(BaseSettings):
         "*.patriotaindica.com",
         "patriotaindica.com.br",
         "*.patriotaindica.com.br",
-        "*",
     ]
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def strong_secret(cls, v: str) -> str:
-        if len(v) < 32 or "change_this" in v.lower():
+        if not v or len(v) < 64:
             raise ValueError(
-                "JWT_SECRET_KEY fraco ou padrão detectado. Defina uma chave de pelo menos 32 caracteres gerada com openssl rand -hex 64."
+                "JWT_SECRET_KEY fraco ou curto. É obrigatório definir uma chave com no mínimo 64 caracteres gerada com 'openssl rand -hex 64'."
             )
+        v_lower = v.lower()
+        blocklist = ("sua_chave", "dev_key", "change", "secret", "example", "exemplo")
+        for term in blocklist:
+            if term in v_lower:
+                raise ValueError(
+                    f"JWT_SECRET_KEY contém termo proibido pela política de segurança: '{term}'. Gere uma chave criptográfica forte com openssl rand -hex 64."
+                )
         return v
 
     model_config = SettingsConfigDict(

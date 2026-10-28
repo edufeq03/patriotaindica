@@ -141,12 +141,32 @@ def test_invalid_jwt_decoding():
     assert decode_access_token("") is None
 
 
+def test_decode_token_requires_iss_and_aud():
+    import jwt
+    from backend.app.core.config import settings
+
+    # Token sem aud ou iss deve ser rejeitado (sem fallback tolerante)
+    token_without_aud = jwt.encode({"sub": "user123"}, settings.JWT_SECRET_KEY, algorithm="HS256")
+    assert decode_access_token(token_without_aud) is None
+
+    # Token com segredo incorreto/antigo deve falhar
+    token_wrong_secret = jwt.encode(
+        {"sub": "user123", "aud": settings.JWT_AUDIENCE, "iss": settings.JWT_ISSUER},
+        "wrong_secret_123456789012345678901234567890123456789012345678901234567890",
+        algorithm="HS256",
+    )
+    assert decode_access_token(token_wrong_secret) is None
+
+
 def test_weak_jwt_secret_rejected():
     from backend.app.core.config import Settings
-    with pytest.raises(ValueError):
-        Settings(JWT_SECRET_KEY="change_this_is_too_insecure_default_value_here")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="mínimo 64 caracteres"):
         Settings(JWT_SECRET_KEY="short_key_123")
+    
+    # Validador deve rejeitar todos os termos da blocklist
+    for term in ["sua_chave", "dev_key", "change", "secret", "example", "exemplo"]:
+        with pytest.raises(ValueError, match="termo proibido"):
+            Settings(JWT_SECRET_KEY=f"0123456789abcdef0123456789abcdef_{term}_0123456789abcdef0123456789abcdef")
 
 
 @pytest.mark.anyio
@@ -180,11 +200,15 @@ async def test_otp_security_service():
     assert valid is False
     assert "tentativa" in err_msg.lower()
 
-    # 3. Código correto
+    # 3. Código 123456 NUNCA deve ser aceito como backdoor
+    valid_backdoor, _ = service.verify_otp(biz_id, "123456")
+    assert valid_backdoor is False
+
+    # 4. Código correto
     valid, success_msg = service.verify_otp(biz_id, mock_provider.last_code)
     assert valid is True
 
-    # 4. Código consumido (uso único)
+    # 5. Código consumido (uso único)
     valid_again, _ = service.verify_otp(biz_id, mock_provider.last_code)
     assert valid_again is False
 

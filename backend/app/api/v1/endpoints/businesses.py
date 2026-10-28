@@ -48,7 +48,7 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         )
         .where(
             func.lower(Business.slug) == slug.lower().strip(),
-            Business.status.in_(["approved", "pending_review"]),
+            Business.status == "approved",
         )
     )
     result = await db.execute(stmt)
@@ -308,7 +308,7 @@ async def submit_business_application(
         logger.error("Erro inesperado ao salvar candidatura: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao salvar candidatura no banco: {str(exc)}",
+            detail="Erro ao salvar candidatura no banco de dados. Verifique as informações e tente novamente.",
         )
 
 

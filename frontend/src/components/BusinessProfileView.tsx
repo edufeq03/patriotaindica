@@ -68,9 +68,6 @@ export default function BusinessProfileView({ business, city, category, slug }: 
       const data = await res.json().catch(() => null);
       if (res.ok) {
         setMaskedPhone(data?.masked_phone || '');
-        if (data?.dev_code) {
-          setOtpCode(data.dev_code);
-        }
         setClaimStep('otp');
       } else {
         setOtpError(data?.detail || 'Falha ao solicitar código de confirmação.');

@@ -143,28 +143,3 @@ async def search_nearby_businesses(
         "results": items,
     }
 
-
-@router.get("/audit", tags=["Audit"])
-async def audit_approved_businesses(
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Endpoint leve de auditoria: lista todas as empresas com seus status para diagnóstico.
-    """
-    stmt = select(Business.id, Business.name, Business.status, Business.city, Business.state, Business.created_at).order_by(Business.created_at.desc()).limit(20)
-    res = await db.execute(stmt)
-    rows = res.all()
-    return {
-        "total_returned": len(rows),
-        "businesses": [
-            {
-                "id": str(r[0]),
-                "name": r[1],
-                "status": r[2],
-                "city": r[3],
-                "state": r[4],
-                "created_at": r[5].isoformat() if r[5] else None,
-            }
-            for r in rows
-        ],
-    }

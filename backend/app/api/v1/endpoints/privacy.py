@@ -54,13 +54,16 @@ async def submit_privacy_request(
     client_ip = get_client_ip(request)
     await check_rate_limit(
         key=f"privacy_req:{client_ip}",
-        max_requests=10,
+        limit=10,
         window_seconds=3600,
-        detail="Muitas solicitações de privacidade enviadas. Tente novamente mais tarde.",
+        error_msg="Muitas solicitações de privacidade enviadas. Tente novamente mais tarde.",
     )
     ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()
 
+    import uuid
+
     req = DataSubjectRequest(
+        id=uuid.uuid4(),
         request_type=payload.request_type,
         email=str(payload.email).lower(),
         phone=payload.phone.strip() if payload.phone else None,

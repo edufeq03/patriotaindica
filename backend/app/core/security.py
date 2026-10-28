@@ -63,7 +63,7 @@ def create_access_token(
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     try:
-        # Tenta decodificação com validação estrita de emissor e audiência
+        # Decodificação estrita com validação obrigatória de emissor, audiência e assinatura
         payload = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
@@ -73,16 +73,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         )
         return payload
     except Exception:
-        # Fallback tolerante para tokens sem iss/aud (ex: testes legados)
-        try:
-            return jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
-                options={"verify_aud": False, "verify_iss": False},
-            )
-        except Exception:
-            return None
+        return None
 
 
 async def get_current_user(

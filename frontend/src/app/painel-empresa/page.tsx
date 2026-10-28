@@ -130,7 +130,6 @@ function BusinessDashboardContent() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpTargetBizId, setOtpTargetBizId] = useState<string | null>(null);
   const [otpMaskedPhone, setOtpMaskedPhone] = useState<string | null>(null);
-  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -289,39 +288,10 @@ function BusinessDashboardContent() {
       });
       const data = await res.json();
       if (res.ok && data.init_point) {
-        if (data.is_live) {
-          window.location.href = data.init_point;
-        } else {
-          // Em ambiente local sem token do MP configurado, ativa diretamente para o usuário
-          await handleSimulateActivation(planId);
-        }
+        window.location.href = data.init_point;
       }
     } catch (err) {
       console.error('Erro ao iniciar checkout Mercado Pago:', err);
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  // Simular ativação rápida para teste/homologação
-  const handleSimulateActivation = async (planId: string) => {
-    if (!session?.token) return;
-    setCheckoutLoading(true);
-    try {
-      const res = await fetch(`/api/v1/payments/simulate-activation?plan_id=${planId}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-        },
-      });
-      if (res.ok) {
-        setShowCheckoutModal(false);
-        await fetchSubscription(session.token);
-        setSaveSuccess('Plano ativado com sucesso! Cobertura liberada para todos os negócios da sua conta.');
-        setTimeout(() => setSaveSuccess(null), 5000);
-      }
-    } catch (err) {
-      console.error('Erro ao ativar plano:', err);
     } finally {
       setCheckoutLoading(false);
     }
@@ -358,10 +328,6 @@ function BusinessDashboardContent() {
       setOtpSent(true);
       setOtpTargetBizId(data.business_id);
       setOtpMaskedPhone(data.masked_phone);
-      if (data.dev_code) {
-        setOtpDevCode(data.dev_code);
-        setOtpCode(data.dev_code);
-      }
       setAuthLoading(false);
     } catch (err) {
       setAuthError('Falha de conexão com o servidor. Tente novamente.');
@@ -711,15 +677,6 @@ function BusinessDashboardContent() {
                         return otpMaskedPhone;
                       })()}
                     </strong>.</p>
-                    {otpDevCode ? (
-                      <p className="text-[11px] text-emerald-400 font-mono">
-                        Ambiente de teste: Código <strong>{otpDevCode}</strong> (ou utilize <strong>123456</strong>)
-                      </p>
-                    ) : (
-                      <p className="text-[11px] text-slate-400">
-                        Dica de teste: Você também pode usar <strong>123456</strong> em modo de homologação.
-                      </p>
-                    )}
                   </div>
 
                   <div>
@@ -1062,20 +1019,10 @@ function BusinessDashboardContent() {
                   <button
                     type="button"
                     onClick={() => setShowCheckoutModal(true)}
-                    className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-950/40 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-950/40 flex items-center justify-center gap-2"
                   >
                     <CreditCard className="w-4 h-4" />
                     <span>{subscription?.is_active ? 'Renovar / Trocar Plano' : 'Ativar Plano no Mercado Pago'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSimulateActivation('anual')}
-                    title="Simular ativação de 1 ano para testes rápidos"
-                    className="px-3 py-2.5 rounded-xl bg-[#070b0e] hover:bg-[#121e29] border border-[#182836] text-slate-400 hover:text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Teste: Ativar Anual</span>
                   </button>
                 </div>
               </div>
@@ -1760,16 +1707,6 @@ function BusinessDashboardContent() {
                     <span>Pagar com Pix ou Cartão em até 12x (Mercado Pago)</span>
                   </>
                 )}
-              </button>
-
-              <button
-                type="button"
-                disabled={checkoutLoading}
-                onClick={() => handleSimulateActivation(selectedPlanId)}
-                className="w-full py-2.5 rounded-xl bg-[#070b0e] hover:bg-[#121e29] border border-[#182836] text-slate-400 hover:text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Modo Teste / Homologação: Ativar Imediatamente</span>
               </button>
             </div>
           </div>

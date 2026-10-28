@@ -345,18 +345,3 @@ async def mercadopago_webhook(
 
     return {"status": "received"}
 
-
-@router.post("/simulate-activation")
-async def simulate_activation(
-    plan_id: str = Query(..., pattern="^(mensal|semestral|anual)$"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """
-    Endpoint de teste / homologação para simular ativação e testar a bonificação de 1 mês grátis.
-    """
-    return await activate_user_subscription(
-        db=db,
-        user_id=current_user.id,
-        plan_id=plan_id,
-    )
