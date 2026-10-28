@@ -141,6 +141,7 @@ async def get_my_subscription(
 @router.post("/create-preference")
 async def create_mercadopago_preference(
     payload: CreatePreferenceRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -154,6 +155,12 @@ async def create_mercadopago_preference(
     # Se Mercado Pago tiver token de produção/teste configurado
     mp_token = settings.MERCADO_PAGO_ACCESS_TOKEN
     unit_price = float(plan["price_cents"]) / 100.0
+
+    origin = request.headers.get("origin")
+    if origin and ("patriotaindica.com" in origin or "localhost" in origin):
+        app_url = origin.rstrip("/")
+    else:
+        app_url = getattr(settings, "PUBLIC_APP_URL", "https://patriotaindica.com").rstrip("/")
 
     if mp_token:
         try:
@@ -174,9 +181,9 @@ async def create_mercadopago_preference(
                         "email": current_user.email,
                     },
                     "back_urls": {
-                        "success": f"{settings.CORS_ORIGINS[0]}/painel-empresa?status=success",
-                        "failure": f"{settings.CORS_ORIGINS[0]}/painel-empresa?status=failure",
-                        "pending": f"{settings.CORS_ORIGINS[0]}/painel-empresa?status=pending",
+                        "success": f"{app_url}/painel-empresa?status=success",
+                        "failure": f"{app_url}/painel-empresa?status=failure",
+                        "pending": f"{app_url}/painel-empresa?status=pending",
                     },
                     "auto_return": "approved",
                     "metadata": {
@@ -184,7 +191,7 @@ async def create_mercadopago_preference(
                         "plan_id": plan["id"],
                         "business_id": str(payload.business_id) if payload.business_id else None,
                     },
-                    "notification_url": f"{settings.CORS_ORIGINS[0]}/api/v1/payments/mercadopago/webhook",
+                    "notification_url": f"{app_url}/api/v1/payments/mercadopago/webhook",
                 }
                 res = await client.post(
                     "https://api.mercadopago.com/checkout/preferences",

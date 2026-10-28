@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     MERCADO_PAGO_ACCESS_TOKEN: Optional[str] = None
     MERCADO_PAGO_PUBLIC_KEY: Optional[str] = None
     BILLING_MODE: str = "per_owner"  # 'per_owner' ou 'per_business'
+    PUBLIC_APP_URL: str = "https://patriotaindica.com"
 
     # CORS - M1: Restringir origens válidas sem curinga em produção
     CORS_ORIGINS: List[str] = [
