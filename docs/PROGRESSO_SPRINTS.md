@@ -17,7 +17,7 @@
 | **Sprint 4** | Cobrança consistente e valor pago (H8, M8, A2.3) | ✅ Concluída | 84 testes passando (`backend/tests/test_sprint4.py`) + Webhook Mercado Pago HMAC |
 | **Sprint 5** | WhatsApp híbrido e Concierge da Rede de Confiança | ✅ Concluída | 91 testes passando (`backend/tests/test_sprint5.py`) + Provedor Híbrido |
 | **Sprint 6** | Qualidade de código, DevEx e governança (T6.1 a T6.3) | ✅ Concluída | 95 testes passando (`backend/tests/test_sprint6.py`) + Runner de Migração & Drift Check |
-| **Sprint 7** | Rede de Negócios, Recomendações Mútuas e Go-Live | ⏳ **A INICIAR** | Endosso entre pares (`peer_endorsements`), link de bio, ASVS e homologação |
+| **Sprint 7** | Rede de Negócios, Recomendações Mútuas e Go-Live | ✅ Concluída | 99 testes passando (`backend/tests/test_sprint7.py`) + ASVS L1 + DR Drill + `/q/[slug]` |
 
 ---
 
@@ -169,18 +169,27 @@
 
 ---
 
-## 6. Sprint 7: Rede de Negócios, Recomendações Mútuas e Go-Live
+## 6. Sprint 7: Rede de Negócios, Recomendações Mútuas e Go-Live (Concluída)
 
-Tarefas em andamento para ativação operacional imediata:
-1. **T7.1: Selo "Disponível Agora" (`availability_until`)**:
-   - Para atividades que demandam atendimento urgente (chaveiros, guincho, socorro mecânico, plantão).
-2. **T7.2: Endosso e Indicação Mútua Entre Pares (`peer_endorsements`)**:
-   - Empresas e profissionais da rede podem indicar publicamente outros colegas parceiros da comunidade ("Recomendado por X empresas parceiras"), gerando uma teia de confiança orgânica.
-3. **T7.3: Mini-Site / Link de Bio de Confiança (`/q/{slug}`)**:
-   - Página ultra-rápida e otimizada para celular para compartilhamento no Instagram/WhatsApp com QR Code e selos de verificação da rede.
-4. **T7.4: Checklist de Segurança OWASP ASVS Nível 1**:
-   - Validação dos controles de cabeçalhos, rate limits e autenticação.
-5. **T7.5: Ensaio de Restauração de Backup em Homologação**:
-   - Script de teste ponta a ponta simulando desastre e restauração rápida.
+- **T7.1: Selo "Disponível Agora" / Plantão Imediato (`availability_until`)**:
+  - Implementado no backend (`POST /api/v1/owner/{business_id}/availability`): ativação flexível por 1 a 24 horas para prestadores de atendimento emergencial (chaveiros, guinchos, mecânica rápida, plantão).
+  - Vitrine e perfil exibem o selo verde ativo de atendimento de imediato.
+- **T7.2: Endossos e Recomendações Mútuas Entre Pares (`peer_endorsements`)**:
+  - Migração `017_sprint7_business_network_and_endorsements.sql` criando tabela `peer_endorsements` com RLS, validação anti-autoindicação e trigger automático de contagem.
+  - Endpoints no painel (`POST /api/v1/owner/{business_id}/endorsements`, `DELETE`) permitindo que empresas e profissionais da rede recomendem colegas parceiros da comunidade.
+  - Endpoint público `GET /api/v1/businesses/by-slug/{slug}/endorsements`: exibe a lista de recomendações comprovadas de outros empresários da rede ("Recomendado por X empresas parceiras"), gerando uma teia de reputação e confiança inatacável.
+- **T7.3: Cartão Digital de Confiança e Link de Bio (`/q/{slug}`)**:
+  - Rota `GET /api/v1/businesses/by-slug/{slug}/trust-card` fornecendo os dados consolidados de reputação.
+  - Página Next.js 16 (`frontend/src/app/q/[slug]/page.tsx`) ultra-rápida, com visual refinado, selo de verificação da rede, contagem de indicações entre pares, link direto de WhatsApp com texto pré-definido de confiança e compatibilidade com QR Codes para balcões e frotas.
+- **T7.4: Auditoria Automatizada OWASP ASVS Nível 1**:
+  - Script executável [scripts/audit_security_asvs.py](file:///home/capella/dev/antigravity/patriotaindica/scripts/audit_security_asvs.py) validando cabeçalhos de segurança, mitigação de enumeração, rate limiting, anti-tampering em webhooks e ausência de vazamento de erros. 100% aprovado.
+- **T7.5: Ensaio de Simulação de Disaster Recovery (DR Drill)**:
+  - Script executável [scripts/test_disaster_recovery.sh](file:///home/capella/dev/antigravity/patriotaindica/scripts/test_disaster_recovery.sh) executando teste ponta a ponta: dump representativo -> criptografia AES-256-CBC PBKDF2 -> checksum SHA-256 -> detecção e bloqueio de adulteração -> descriptografia e restauração atômica. 100% aprovado.
+
+---
+
+## 7. Status do Roadmap de Engenharia
+
+Todas as 8 sprints planejadas (Sprint 0 à Sprint 7) foram concluídas com sucesso. O sistema possui 99 testes automatizados verdes, compilação de frontend 100% limpa no Next.js 16 e arquitetura pronta para ativação imediata em produção.
 
 

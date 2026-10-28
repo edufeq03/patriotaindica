@@ -68,18 +68,18 @@ async def receive_whatsapp_webhook(
     """
     raw_body = await request.body()
 
-    # 1. Validação de Assinatura se vier com cabeçalho da Meta
-    x_hub_sig = request.headers.get("X-Hub-Signature-256")
-    meta_secret = settings.META_APP_SECRET
-    if meta_secret and x_hub_sig:
-        if not verify_meta_hub_signature(raw_body, x_hub_sig, meta_secret):
-            logger.warning("Assinatura X-Hub-Signature-256 inválida rejeitada.")
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Assinatura inválida.")
-
     try:
         body = await request.json()
     except Exception:
         body = {}
+
+    # 1. Validação de Assinatura se vier com cabeçalho da Meta ou payload da Meta
+    x_hub_sig = request.headers.get("X-Hub-Signature-256")
+    meta_secret = settings.META_APP_SECRET
+    if meta_secret and (x_hub_sig or "entry" in body):
+        if not x_hub_sig or not verify_meta_hub_signature(raw_body, x_hub_sig, meta_secret):
+            logger.warning("Assinatura X-Hub-Signature-256 inválida ou ausente rejeitada.")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Assinatura inválida.")
 
     provider = "meta_cloud" if "entry" in body else "evolution"
     event_id = None

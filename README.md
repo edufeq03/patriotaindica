@@ -1,20 +1,23 @@
-# 🇧🇷 Patriota Indica - Clube de Negócios & Guia da Livre Iniciativa
+# 🇧🇷 Patriota Indica - Rede de Negócios Confiáveis & Clube da Livre Iniciativa
 
-Plataforma de indicação local de serviços e produtos por proximidade geográfica e raio de atendimento, com **CADASTRO CURADO, TRIAGEM RIGOROSA E ADESÃO À CARTA DE PRINCÍPIOS E VALORES**.
+Plataforma comunitária de networking e **indicação qualificada de negócios confiáveis**, conectando consumidores e empresas parceiras por proximidade geográfica, com **CADASTRO CURADO, RECOMENDAÇÃO MÚTUA ENTRE PARES E ADESÃO À CARTA DE PRINCÍPIOS E VALORES**.
+
+> 💡 **FILOSOFIA DO PROJETO**: O Patriota Indica **NÃO é um marketplace de leilão de menor preço ou disputa predatória por orçamentos**. Nosso propósito é criar uma **Rede de Negócios Confiáveis**, fortalecendo o empresário e prestador local através de reputação comprovada, indicações entre membros associados e integridade comunitária.
 
 ---
 
 ## 🏛️ Visão e Blindagem Jurídica
 
-O **Patriota Indica** opera como uma **Rede de Afinidade e Clube de Negócios Privado**, fundado na **Liberdade de Associação (Art. 5º, XVII da Constituição Federal)** e na **Autonomia Privada e Liberdade Contratual (Art. 421 do Código Civil)**.
+O **Patriota Indica** opera como uma **Rede de Afinidade, Confiança e Clube de Negócios Privado**, fundado na **Liberdade de Associação (Art. 5º, XVII da Constituição Federal)** e na **Autonomia Privada e Liberdade Contratual (Art. 421 do Código Civil)**.
 
 - **Carta de Princípios e Valores:** Toda empresa parceira subscreve voluntariamente os 4 pilares:
   1. *Livre Iniciativa & Economia de Mercado*
   2. *Inviolabilidade da Propriedade Privada & Liberdades Individuais*
   3. *Ética Cristã/Ocidental, Família & Retidão Comercial*
   4. *Prosperidade Comunitária & Cooperação Voluntária*
+- **Rede de Indicação e Endosso Mútuo:** Membros da rede recomendam colegas parceiros ("Recomendado por empresas associadas"), criando uma teia de credibilidade orgânica.
 - **Conformidade CDC:** O catálogo e o atendimento ao consumidor final são **universais e irrestritos**, atendendo a qualquer cidadão com excelência, civilidade e sem qualquer discriminação.
-- **Conformidade LGPD:** Não armazenamos dados de filiação partidária; apenas a declaração de subscrição e anuência à Carta de Princípios.
+- **Conformidade LGPD:** Não armazenamos dados de filiação partidária; apenas a declaração de subscrição e anuência à Carta de Princípios, consentimentos auditáveis e canal de opt-out no WhatsApp.
 
 ---
 
@@ -24,34 +27,29 @@ O **Patriota Indica** opera como uma **Rede de Afinidade e Clube de Negócios Pr
 patriotaindica/
 ├── backend/                        # API REST assíncrona em FastAPI (Python 3.12)
 │   ├── app/
-│   │   ├── api/v1/endpoints/       # Busca espacial, empresas, triagem, métricas e auth
-│   │   ├── core/                   # Configurações, banco assíncrono e segurança JWT
-│   │   ├── models/                 # Modelos SQLAlchemy (PostGIS Geography)
-│   │   ├── schemas/                # Schemas Pydantic v2
-│   │   └── main.py                 # Ponto de entrada FastAPI com CORS
-│   ├── tests/                      # Testes automatizados (pytest)
+│   │   ├── api/v1/endpoints/       # Busca PostGIS, empresas, triagem, painel do dono, pagamentos, whatsapp
+│   │   ├── core/                   # Configurações, banco assíncrono, Redis, rate limiting e segurança JWT/BFF
+│   │   ├── models/                 # Modelos SQLAlchemy (PostGIS Geography, PeerEndorsements, WhatsApp, Plans)
+│   │   ├── schemas/                # Schemas Pydantic v2 com validação estrita
+│   │   ├── services/               # WhatsApp Híbrido (Evolution + Meta Cloud), OTP seguro e Geocodificação
+│   │   └── main.py                 # Ponto de entrada FastAPI com middlewares de segurança OWASP
+│   ├── tests/                      # 99 testes automatizados (pytest + anyio)
 │   ├── requirements.txt            # Dependências Python
 │   ├── Dockerfile
 │   └── .env.example
-├── frontend/                       # Aplicação Next.js (App Router, SSR/SEO, Tailwind)
+├── frontend/                       # Aplicação Next.js 16 (Turbopack, SSR/SEO, Tailwind, BFF)
 │   ├── src/
-│   │   ├── app/                    # Rotas: /, /[city]/[category]/[slug], /admin, /painel-empresa, /convite/[token]
-│   │   ├── components/             # BusinessProfileView, ManifestoModal
-│   │   └── lib/                    # Tipos, mock data e utilitários de distância
+│   │   ├── app/                    # Rotas: /, /[city]/[category]/[slug], /q/[slug], /admin, /painel-empresa
+│   │   ├── components/             # BusinessProfileView, ManifestoModal, TrustCard
+│   │   └── lib/                    # Tipos, mock data e utilitários
 │   ├── Dockerfile
 │   └── package.json
-├── database/                       # Migrations SQL versionadas e Seeds
-│   ├── migrations/
-│   │   ├── 001_initial_schema.sql         # Tabelas, enums, índices GIST/GIN e triggers
-│   │   ├── 002_search_function.sql        # Função PostGIS get_nearby_businesses (KNN <->)
-│   │   ├── 003_rls_and_permissions.sql    # Políticas de RLS e reanálise de campos sensíveis
-│   │   └── 004_seed_categories.sql        # Taxonomia completa de categorias curadas
-│   └── seed/
-│       ├── categories.sql                 # Seed de categorias
-│       └── sample_businesses_campinas.sql # Dados de teste da cidade piloto (Campinas-SP)
+├── database/                       # Migrations SQL versionadas com SHA-256 e controle de drift
+│   ├── migrations/                 # 17 migrações SQL (001 a 017)
+│   └── scripts/                    # Runner Python migrate.py e anonimização LGPD
+├── scripts/                        # Scripts operacionais: backup AES-256, restore, ASVS audit e DR drill
 ├── docker-compose.yml              # Orquestração PostGIS 16, Redis 7, Backend e Frontend
-├── .env.example                    # Modelo unificado de variáveis de ambiente
-└── marketplace-local-spec-v2.txt   # Especificação Técnica v2
+└── .env.example                    # Modelo unificado de variáveis de ambiente
 ```
 
 ---

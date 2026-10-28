@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 import hashlib
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
-from backend.app.models.business import Business, BusinessCategory
+from backend.app.models.business import Business, BusinessCategory, PeerEndorsement
 from backend.app.models.category import Category
 from backend.app.models.events import BusinessReviewLog, Consent, Report
 from backend.app.schemas.business import BusinessApplicationCreate, BusinessDetail, ReportCreate
@@ -101,9 +102,114 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         "banner_url": business.banner_url,
         "status": business.status,
         "is_verified": business.is_verified,
+        "network_badge": getattr(business, "network_badge", "membro_verificado"),
+        "endorsements_count": getattr(business, "endorsements_count", 0),
+        "is_available_now": bool(business.availability_until and business.availability_until > datetime.now(timezone.utc)),
+        "availability_until": business.availability_until.isoformat() if business.availability_until else None,
         "categories": categories_list,
         "created_at": business.created_at,
     }
+
+
+@router.get("/by-slug/{slug}/endorsements", response_model=Dict[str, Any])
+async def get_business_endorsements(slug: str, db: AsyncSession = Depends(get_db)):
+    """
+    T7.2: Lista pública de recomendações de confiança recebidas de outras empresas parceiras da rede.
+    Apenas empresas e recomendações aprovadas/públicas são exibidas.
+    """
+    # 1. Buscar a empresa
+    stmt = select(Business).where(
+        func.lower(Business.slug) == slug.lower().strip(),
+        Business.status == "approved",
+        Business.owner_paused.is_(False),
+    )
+    business = (await db.execute(stmt)).scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    # 2. Buscar as recomendações de pares aprovados
+    end_stmt = (
+        select(PeerEndorsement, Business)
+        .join(Business, Business.id == PeerEndorsement.endorsing_business_id)
+        .where(
+            PeerEndorsement.endorsed_business_id == business.id,
+            PeerEndorsement.is_public.is_(True),
+            Business.status == "approved",
+            Business.owner_paused.is_(False),
+        )
+        .order_by(PeerEndorsement.created_at.desc())
+    )
+    records = (await db.execute(end_stmt)).all()
+
+    endorsements = []
+    for endorsement, endorsing_biz in records:
+        endorsements.append({
+            "endorsing_business_name": endorsing_biz.name,
+            "endorsing_business_slug": endorsing_biz.slug,
+            "endorsing_business_city": endorsing_biz.city,
+            "endorsing_business_neighborhood": endorsing_biz.neighborhood,
+            "endorsing_business_badge": getattr(endorsing_biz, "network_badge", "membro_verificado"),
+            "relationship_type": endorsement.relationship_type,
+            "testimonial": endorsement.testimonial,
+            "created_at": endorsement.created_at.isoformat(),
+        })
+
+    return {
+        "business_name": business.name,
+        "business_slug": business.slug,
+        "endorsements_count": len(endorsements),
+        "endorsements": endorsements,
+    }
+
+
+@router.get("/by-slug/{slug}/trust-card", response_model=Dict[str, Any])
+async def get_business_trust_card(slug: str, db: AsyncSession = Depends(get_db)):
+    """
+    T7.3: Cartão Digital de Confiança / Mini-site para links de redes sociais e QR Codes físicos.
+    """
+    stmt = (
+        select(Business)
+        .where(
+            func.lower(Business.slug) == slug.lower().strip(),
+            Business.status == "approved",
+            Business.owner_paused.is_(False),
+        )
+    )
+    business = (await db.execute(stmt)).scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    clean_wa = re.sub(r"\D", "", business.whatsapp_e164 or business.whatsapp)
+    encoded_greeting = (
+        f"Ol%C3%A1!%20Encontrei%20o%20perfil%20do(a)%20{business.name}%20na%20Rede%20Patriota%20Indica%20"
+        f"e%20gostaria%20de%20um%20atendimento%20de%20confian%C3%A7a."
+    )
+    direct_whatsapp_url = f"https://wa.me/{clean_wa}?text={encoded_greeting}"
+    base_url = settings.PUBLIC_APP_URL.rstrip("/")
+    share_url = f"{base_url}/q/{business.slug}"
+
+    now = datetime.now(timezone.utc)
+    is_avail = bool(business.availability_until and business.availability_until > now)
+
+    return {
+        "name": business.name,
+        "slug": business.slug,
+        "city": business.city,
+        "state": business.state,
+        "neighborhood": business.neighborhood,
+        "network_badge": getattr(business, "network_badge", "membro_verificado"),
+        "is_verified": business.is_verified,
+        "endorsements_count": getattr(business, "endorsements_count", 0),
+        "is_available_now": is_avail,
+        "availability_until": business.availability_until.isoformat() if business.availability_until else None,
+        "direct_whatsapp_url": direct_whatsapp_url,
+        "share_url": share_url,
+        "website": business.website,
+        "instagram": business.instagram,
+        "phone": business.phone,
+        "verified_network_statement": "Esta empresa faz parte da Rede de Negócios Confiáveis Patriota Indica, com curadoria e princípios alinhados à comunidade.",
+    }
+
 
 
 @router.post("/application", status_code=status.HTTP_201_CREATED)

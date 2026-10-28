@@ -81,6 +81,11 @@ class Business(Base):
     reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Selos e Reputação da Rede de Negócios Confiáveis
+    availability_until = Column(DateTime(timezone=True), nullable=True, index=True)
+    network_badge = Column(String(50), nullable=False, default="membro_verificado")
+    endorsements_count = Column(Integer, nullable=False, default=0)
+
     # Full text search
     search_vector = Column(TSVECTOR, nullable=True)
 
@@ -93,6 +98,24 @@ class Business(Base):
     contact_events = relationship("ContactEvent", back_populates="business", cascade="all, delete-orphan")
     invitations = relationship("Invitation", back_populates="business", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="business", cascade="all, delete-orphan")
+    endorsements_received = relationship("PeerEndorsement", foreign_keys="PeerEndorsement.endorsed_business_id", cascade="all, delete-orphan")
+    endorsements_given = relationship("PeerEndorsement", foreign_keys="PeerEndorsement.endorsing_business_id", cascade="all, delete-orphan")
+
+
+class PeerEndorsement(Base):
+    __tablename__ = "peer_endorsements"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    endorsing_business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    endorsed_business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    relationship_type = Column(String(30), nullable=False, default="peer")  # 'client', 'partner', 'peer', 'supplier'
+    testimonial = Column(String(500), nullable=True)
+    is_public = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    endorsing_business = relationship("Business", foreign_keys=[endorsing_business_id], overlaps="endorsements_given")
+    endorsed_business = relationship("Business", foreign_keys=[endorsed_business_id], overlaps="endorsements_received")
 
 
 class BusinessCategory(Base):
