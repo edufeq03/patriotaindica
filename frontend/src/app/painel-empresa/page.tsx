@@ -698,7 +698,19 @@ function BusinessDashboardContent() {
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4 text-xs">
                   <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-300 text-xs space-y-1">
-                    <p>Código enviado para <strong className="font-mono text-white">{otpMaskedPhone}</strong>.</p>
+                    <p>Código enviado para <strong className="font-mono text-white">
+                      {(() => {
+                        if (!otpMaskedPhone) return '';
+                        const raw = otpMaskedPhone.replace(/\D/g, '');
+                        const clean = raw.startsWith('55') && (raw.length === 12 || raw.length === 13) ? raw.slice(2) : raw;
+                        if (clean.length === 11) {
+                          return `+55 (${clean.slice(0, 2)}) ${clean[2]}****-${clean.slice(-4)}`;
+                        } else if (clean.length === 10) {
+                          return `+55 (${clean.slice(0, 2)}) ****-${clean.slice(-4)}`;
+                        }
+                        return otpMaskedPhone;
+                      })()}
+                    </strong>.</p>
                     {otpDevCode ? (
                       <p className="text-[11px] text-emerald-400 font-mono">
                         Ambiente de teste: Código <strong>{otpDevCode}</strong> (ou utilize <strong>123456</strong>)

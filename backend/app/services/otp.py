@@ -185,8 +185,16 @@ class OTPService:
 
     def mask_phone(self, phone: str) -> str:
         digits = "".join(filter(str.isdigit, phone))
-        if len(digits) >= 10:
-            return f"+{digits[:2]} ({digits[2:4]}) *****-{digits[-4:]}"
+        # Normaliza removendo DDI 55 se já estiver presente no início
+        if digits.startswith("55") and len(digits) in (12, 13):
+            digits = digits[2:]
+
+        if len(digits) == 11:
+            return f"+55 ({digits[:2]}) {digits[2]}****-{digits[-4:]}"
+        elif len(digits) == 10:
+            return f"+55 ({digits[:2]}) ****-{digits[-4:]}"
+        elif len(digits) >= 8:
+            return f"+55 (**) *****-{digits[-4:]}"
         return "+55 (**) *****-****"
 
     def check_rate_limit(self, phone_key: str, limit: int = 3, window_seconds: int = 3600) -> bool:

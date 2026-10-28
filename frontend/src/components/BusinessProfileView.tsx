@@ -423,7 +423,16 @@ export default function BusinessProfileView({ business, city, category, slug }: 
                 <div className="p-4 rounded-xl bg-[#070b0e] border border-[#182836] space-y-2">
                   <span className="text-slate-400">Número de WhatsApp cadastrado:</span>
                   <p className="font-mono text-sm text-emerald-400 font-bold">
-                    +55 {(business.whatsapp || '').slice(0, 2)} *****-{(business.whatsapp || '').slice(-4)}
+                    {(() => {
+                      const raw = (business.whatsapp || '').replace(/\D/g, '');
+                      const clean = raw.startsWith('55') && (raw.length === 12 || raw.length === 13) ? raw.slice(2) : raw;
+                      if (clean.length === 11) {
+                        return `+55 (${clean.slice(0, 2)}) ${clean[2]}****-${clean.slice(-4)}`;
+                      } else if (clean.length === 10) {
+                        return `+55 (${clean.slice(0, 2)}) ****-${clean.slice(-4)}`;
+                      }
+                      return business.whatsapp || '';
+                    })()}
                   </p>
                   <p className="text-[11px] text-slate-500">
                     Você deve ter acesso a esta linha para receber o código de 6 dígitos.
