@@ -111,6 +111,10 @@ async def apply_runtime_migrations():
                 """UPDATE businesses SET
                     referral_code = 'PAT-' || UPPER(SUBSTRING(REPLACE(id::text, '-', ''), 1, 6))
                 WHERE referral_code IS NULL OR referral_code = '' OR referral_code = 'None' OR referral_code = 'null';""",
+                """UPDATE businesses SET
+                    status = 'approved'
+                WHERE (whatsapp_verified_at IS NOT NULL OR owner_user_id IS NOT NULL)
+                  AND status = 'pending_review';""",
                 """CREATE TABLE IF NOT EXISTS plans (
                     id VARCHAR(30) PRIMARY KEY,
                     name VARCHAR(50) NOT NULL,

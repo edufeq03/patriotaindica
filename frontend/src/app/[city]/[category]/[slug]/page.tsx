@@ -35,10 +35,12 @@ export async function generateStaticParams() {
 async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
   const candidateUrls = [
     process.env.INTERNAL_API_URL,
+    process.env.NEXT_PUBLIC_API_URL,
+    'https://patriotaindica.com.br/api/v1',
+    'https://patriotaindica.com/api/v1',
     'http://backend:8000/api/v1',
     'http://patriotaindica-backend:8000/api/v1',
     'http://127.0.0.1:8000/api/v1',
-    'https://patriotaindica.com/api/v1',
   ].filter(Boolean) as string[];
 
   const uniqueUrls = Array.from(new Set(candidateUrls));
@@ -46,10 +48,11 @@ async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
   for (const base of uniqueUrls) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(`${base}/businesses/by-slug/${encodeURIComponent(slug)}`, {
         signal: controller.signal,
-        next: { revalidate: 60 },
+        redirect: 'follow',
+        next: { revalidate: 30 },
       });
       clearTimeout(timeoutId);
 
@@ -57,8 +60,8 @@ async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
         const data = await res.json();
         if (data && data.id) {
           const primaryCat = data.categories?.find((c: any) => c.is_primary) || data.categories?.[0];
-          const category_name = primaryCat?.name || 'Geral';
-          const category_slug = primaryCat?.slug || 'geral';
+          const category_name = primaryCat?.name || (data.listing_type === 'product' ? 'Produtos' : 'Serviços');
+          const category_slug = primaryCat?.slug || 'servicos';
 
           return {
             id: String(data.id),
@@ -85,7 +88,7 @@ async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
             longitude: Number(data.longitude) || 0,
             logo_url: data.logo_url || undefined,
             banner_url: data.banner_url || undefined,
-            status: 'approved',
+            status: (data.status as any) || 'approved',
             is_verified: !!data.is_verified,
             created_at: data.created_at || new Date().toISOString(),
             accepted_manifesto: true,

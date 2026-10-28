@@ -238,6 +238,7 @@ async def verify_claim_otp(
             .values(
                 whatsapp_verified_at=now,
                 is_verified=True,
+                status="approved",
                 owner_user_id=owner_user.id,
             )
         )

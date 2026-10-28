@@ -136,13 +136,13 @@ async def toggle_business_pause(
     if business.status == "approved":
         business.status = "suspended"
         msg = "Anúncio pausado com sucesso. Ele foi ocultado temporariamente das buscas públicas."
-    elif business.status == "suspended":
+    elif business.status in ("suspended", "pending_review"):
         business.status = "approved"
-        msg = "Anúncio reativado com sucesso! Já está visível novamente nas buscas públicas."
+        msg = "Anúncio ativado com sucesso! Já está visível novamente nas buscas públicas."
     else:
         raise HTTPException(
             status_code=400,
-            detail=f"Não é possível pausar um anúncio em status '{business.status}'. Apenas anúncios ativos podem ser pausados.",
+            detail=f"Não é possível alterar um anúncio em status '{business.status}'.",
         )
 
     await db.commit()

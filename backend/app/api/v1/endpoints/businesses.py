@@ -46,7 +46,10 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         .options(
             selectinload(Business.categories).joinedload(BusinessCategory.category)
         )
-        .where(Business.slug == slug, Business.status == "approved")
+        .where(
+            func.lower(Business.slug) == slug.lower().strip(),
+            Business.status.in_(["approved", "pending_review"]),
+        )
     )
     result = await db.execute(stmt)
     business = result.scalar_one_or_none()
@@ -54,7 +57,7 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     if not business:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Empresa não encontrada ou ainda em análise de curadoria.",
+            detail="Empresa não encontrada ou inativa.",
         )
 
     categories_list = [
@@ -93,6 +96,7 @@ async def get_business_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         "show_full_address": business.show_full_address,
         "logo_url": business.logo_url,
         "banner_url": business.banner_url,
+        "status": business.status,
         "is_verified": business.is_verified,
         "categories": categories_list,
         "created_at": business.created_at,
