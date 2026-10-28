@@ -39,8 +39,13 @@ app.add_middleware(
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Exceção não tratada capturada em %s: %s", request.url.path, exc)
-    is_admin = request.url.path.startswith("/api/v1/triage") or request.url.path.startswith("/api/v1/auth")
-    if settings.DEBUG or is_admin:
+    is_auth_claim = (
+        request.url.path.startswith("/api/v1/triage")
+        or request.url.path.startswith("/api/v1/auth")
+        or request.url.path.startswith("/api/v1/claim")
+        or request.url.path.startswith("/api/v1/owner")
+    )
+    if settings.DEBUG or is_auth_claim:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": f"Erro interno ({exc.__class__.__name__}): {str(exc)}"},

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.config import settings
-from backend.app.core.database import get_db
+from backend.app.core.database import get_db, set_db_app_context
 from backend.app.core.security import create_access_token, get_password_hash
 from backend.app.models.business import Business
 from backend.app.models.user import User
@@ -35,6 +35,9 @@ async def request_otp_by_phone(
     Localiza a empresa pelo número de WhatsApp informado e dispara o envio do código OTP.
     Permite login ágil e seguro sem necessidade de memorizar senha.
     """
+    # Eleva privilégio de transação para passar por RLS durante busca de triagem
+    await set_db_app_context(db, role="admin")
+
     clean_digits = "".join(filter(str.isdigit, payload.phone))
     if len(clean_digits) < 8:
         raise HTTPException(
@@ -175,8 +178,11 @@ async def verify_claim_otp(
     Valida o código OTP informado pelo usuário contra o hash com sal armazenado no servidor.
     Se válido, vincula o proprietário ao negócio e retorna um token JWT de autenticação para acesso imediato.
     """
+    # Eleva privilégio de transação para passar por RLS durante claim inicial do proprietário
+    await set_db_app_context(db, role="admin")
+
     stmt = select(Business).where(Business.id == business_id)
-    business = (await db.execute(stmt)).scalar_one_or_none()
+    business = (await db.execute(stmt)).scalars().first()
 
     if not business:
         raise HTTPException(status_code=404, detail="Empresa não encontrada.")
@@ -189,39 +195,49 @@ async def verify_claim_otp(
     if not valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
-    # Identidade validada via WhatsApp
-    now = datetime.now(timezone.utc)
-    business.whatsapp_verified_at = now
-    business.is_verified = True
+    try:
+        # Identidade validada via WhatsApp
+        now = datetime.now(timezone.utc)
+        business.whatsapp_verified_at = now
+        business.is_verified = True
 
-    # Obter ou criar usuário para este dono
-    clean_phone = "".join(filter(str.isdigit, business.whatsapp or ""))
-    owner_user = None
-    if business.owner_user_id:
-        u_stmt = select(User).where(User.id == business.owner_user_id)
-        owner_user = (await db.execute(u_stmt)).scalar_one_or_none()
+        # Obter ou criar usuário para este dono
+        clean_phone = "".join(filter(str.isdigit, business.whatsapp or ""))
+        owner_user = None
+        if business.owner_user_id:
+            u_stmt = select(User).where(User.id == business.owner_user_id)
+            owner_user = (await db.execute(u_stmt)).scalars().first()
 
-    if not owner_user and clean_phone:
-        u_stmt = select(User).where((User.phone == clean_phone) | (User.email == f"{clean_phone}@patriotaindica.com"))
-        owner_user = (await db.execute(u_stmt)).scalar_one_or_none()
+        if not owner_user and clean_phone:
+            u_stmt = select(User).where((User.phone == clean_phone) | (User.email == f"{clean_phone}@patriotaindica.com"))
+            owner_user = (await db.execute(u_stmt)).scalars().first()
 
-    if not owner_user:
-        owner_user = User(
-            name=business.name,
-            email=f"{clean_phone or secrets.token_hex(4)}@patriotaindica.com",
-            phone=clean_phone or None,
-            password_hash=get_password_hash(secrets.token_urlsafe(16)),
-            role="owner",
-            is_active=True,
+        if not owner_user:
+            owner_user = User(
+                name=business.name,
+                email=f"{clean_phone or secrets.token_hex(4)}@patriotaindica.com",
+                phone=clean_phone or None,
+                password_hash=get_password_hash(secrets.token_urlsafe(16)),
+                role="owner",
+                is_active=True,
+            )
+            db.add(owner_user)
+            await db.flush()
+
+        business.owner_user_id = owner_user.id
+        if owner_user.role == "user":
+            owner_user.role = "owner"
+
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Falha ao salvar usuário autenticado ou vincular ao negócio: %s", exc)
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Não foi possível concluir a autenticação: {str(exc)}",
         )
-        db.add(owner_user)
-        await db.flush()
-
-    business.owner_user_id = owner_user.id
-    if owner_user.role == "user":
-        owner_user.role = "owner"
-
-    await db.commit()
 
     access_token = create_access_token(
         subject=owner_user.id,
@@ -242,3 +258,4 @@ async def verify_claim_otp(
             "role": owner_user.role,
         },
     }
+
