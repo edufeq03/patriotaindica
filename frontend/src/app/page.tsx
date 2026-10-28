@@ -1043,23 +1043,44 @@ export default function HomePage() {
 
         {/* Empty State */}
         {filteredBusinesses.length === 0 && (
-          <div className="text-center py-16 space-y-4 rounded-2xl border border-[#182836] bg-[#0d151c]/60 p-8">
-            <Building2 className="w-12 h-12 text-amber-400/60 mx-auto" />
-            <h3 className="text-lg font-bold text-white">Nenhuma empresa encontrada com estes filtros</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Nossa triagem é rigorosa e prioriza qualidade à quantidade. Experimente aumentar o raio de busca ou
-              pesquisar outra categoria.
-            </p>
-            <button
-              onClick={() => {
-                setSelectedCategory(null);
-                setSearchQuery('');
-                setMaxDistanceKm(null);
-              }}
-              className="px-4 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-xs text-amber-300"
-            >
-              Resetar busca
-            </button>
+          <div className="text-center py-16 space-y-4 rounded-2xl border border-[#182836] bg-[#0d151c]/60 p-8 max-w-2xl mx-auto">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+              <Building2 className="w-8 h-8" />
+            </div>
+            {businesses.length === 0 ? (
+              <>
+                <h3 className="text-xl font-bold text-white">Nenhuma empresa cadastrada no momento</h3>
+                <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                  Estamos iniciando nossa rede de empresas recomendadas e confiáveis. Seja um dos primeiros profissionais ou lojistas a cadastrar sua marca na plataforma!
+                </p>
+                <div className="pt-2">
+                  <button
+                    onClick={() => setShowApplicationModal(true)}
+                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                  >
+                    Cadastrar Minha Empresa Agora
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-white">Nenhuma empresa encontrada com estes filtros</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Nossa triagem é rigorosa e prioriza qualidade à quantidade. Experimente aumentar o raio de busca ou pesquisar outra categoria.
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedCategory(null);
+                    setSearchQuery('');
+                    setMaxDistanceKm(null);
+                    setSelectedType('all');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#121e29] hover:bg-[#182836] border border-[#182836] text-xs text-amber-300 cursor-pointer"
+                >
+                  Resetar busca
+                </button>
+              </>
+            )}
           </div>
         )}
 

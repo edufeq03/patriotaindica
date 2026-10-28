@@ -162,7 +162,9 @@ export default function AdminDashboardPage() {
 
   // Estado geral de empresas
   const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
-  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(INITIAL_BUSINESSES.find(b => b.status === 'pending_review') || INITIAL_BUSINESSES[0]);
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(
+    INITIAL_BUSINESSES.find(b => b.status === 'pending_review') || INITIAL_BUSINESSES[0] || null
+  );
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
 
   // Sincronizar Fila de Triagem com o Banco de Dados PostgreSQL

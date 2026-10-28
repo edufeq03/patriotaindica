@@ -53,24 +53,24 @@ function InvitationContent() {
       .catch(() => {});
   }, []);
 
-  // Mock de dados pré-preenchidos a partir do convite gerado
+  // Dados do formulário de convite
   const [formData, setFormData] = useState({
     responsibleName: '',
-    businessName: 'Silva Instalações e Eletricista 24h',
-    whatsapp: '19987654321',
+    businessName: '',
+    whatsapp: '',
     category: 'eletricista',
     custom_category: '',
-    neighborhood: 'Centro',
-    city: 'Campinas',
+    neighborhood: '',
+    city: '',
     state: 'SP',
     service_mode: 'at_customer',
     serves_at_location: true,
     serves_at_customer: true,
     serves_online: false,
     service_radius_km: 25,
-    description: 'Especialista em reformas elétricas, quadros de distribuição e laudos técnicos.',
-    instagram: 'silvaeletrica_campinas',
-    website: 'https://silvaeletrica.com.br',
+    description: '',
+    instagram: '',
+    website: '',
     accepted_manifesto: true,
   });
 

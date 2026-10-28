@@ -14,11 +14,17 @@ interface Props {
 }
 
 export async function generateStaticParams() {
-  return INITIAL_BUSINESSES.filter((b) => b.status === 'approved').map((b) => ({
+  const params = INITIAL_BUSINESSES.filter((b) => b.status === 'approved').map((b) => ({
     city: `${b.city.toLowerCase()}-${b.state.toLowerCase()}`,
     category: b.category_slug,
     slug: b.slug,
   }));
+
+  // Requisito do Next.js 16 (Cache Components): generateStaticParams deve conter pelo menos 1 rota para validação de build
+  if (params.length === 0) {
+    return [{ city: 'sp-campinas', category: 'servicos', slug: 'exemplo' }];
+  }
+  return params;
 }
 
 /**
