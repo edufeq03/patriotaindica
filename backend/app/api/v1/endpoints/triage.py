@@ -317,7 +317,33 @@ async def apply_triage_decision(
             admin_id=current_admin.id,
         )
         db.add(log_entry)
+
+        # T4.5: Se a empresa foi aprovada, verificar se há indicação pendente cujo dono já pagou
+        if new_status == "approved" and business.owner_user_id:
+            from backend.app.models.subscription import Referral, Subscription
+            ref_stmt = select(Referral).where(
+                Referral.referred_business_id == business.id,
+                Referral.status == "pending"
+            )
+            pending_ref = (await db.execute(ref_stmt)).scalars().first()
+            if pending_ref and pending_ref.referrer_user_id and pending_ref.referrer_user_id != business.owner_user_id:
+                sub_stmt = select(Subscription).where(
+                    Subscription.owner_user_id == business.owner_user_id,
+                    Subscription.status.in_(["active", "grace_period"])
+                )
+                owner_sub = (await db.execute(sub_stmt)).scalars().first()
+                if owner_sub:
+                    ref_sub_stmt = select(Subscription).where(Subscription.owner_user_id == pending_ref.referrer_user_id)
+                    referrer_sub = (await db.execute(ref_sub_stmt)).scalars().first()
+                    if referrer_sub and referrer_sub.bonus_months_applied < 12:
+                        referrer_sub.current_period_end += timedelta(days=30)
+                        referrer_sub.bonus_months_applied += 1
+                        pending_ref.status = "rewarded"
+                        pending_ref.rewarded_at = datetime.now(timezone.utc)
+                        logger.info("Bônus de 30 dias concedido ao indicador %s após aprovação da empresa %s", pending_ref.referrer_user_id, business.id)
+
         await db.commit()
+
 
         return {
             "success": True,

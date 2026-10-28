@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -15,8 +15,19 @@ class Plan(Base):
     price_cents = Column(Integer, nullable=False)
     monthly_equivalent_cents = Column(Integer, nullable=False)
     duration_months = Column(Integer, nullable=False)
+    description = Column(Text, nullable=True)
+    badge = Column(String(100), nullable=True)
+    is_featured = Column(Boolean, nullable=False, default=False)
+    search_priority = Column(Integer, nullable=False, default=1)
+    max_categories = Column(Integer, nullable=False, default=1)
+    max_photos = Column(Integer, nullable=False, default=3)
+    has_leads_access = Column(Boolean, nullable=False, default=False)
+    has_metrics_access = Column(Boolean, nullable=False, default=False)
+    has_banner_access = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
 
 
 class Subscription(Base):

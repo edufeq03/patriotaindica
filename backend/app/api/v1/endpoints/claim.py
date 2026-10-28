@@ -193,7 +193,18 @@ async def verify_otp_by_phone(
         if owner_user.role == "user":
             owner_user.role = "owner"
 
+    # T4.5: Preencher referred_user_id quando a empresa indicada é reivindicada
+    from backend.app.models.subscription import Referral
+    biz_ids = [b.id for b in businesses]
+    if biz_ids:
+        await db.execute(
+            update(Referral)
+            .where(Referral.referred_business_id.in_(biz_ids), Referral.referred_user_id.is_(None))
+            .values(referred_user_id=owner_user.id)
+        )
+
     await db.commit()
+
 
     access_token = create_access_token(
         subject=owner_user.id,

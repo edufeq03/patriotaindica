@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request
@@ -10,9 +11,11 @@ from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
 from backend.app.models.business import Business, BusinessCategory
 from backend.app.models.category import Category
+from backend.app.models.subscription import Plan, Subscription
 
 logger = logging.getLogger("patriotaindica.search")
 router = APIRouter()
+
 
 
 @router.get("", response_model=Dict[str, Any])
@@ -58,19 +61,32 @@ async def search_nearby_businesses(
         # Distância em KM arredondada para 1 casa decimal
         distance_expr = func.round(cast(func.ST_Distance(Business.location, user_geog) / 1000.0, Numeric), 1)
 
-    # 1. Montagem da Query Principal com JOIN antecipado (Elimina N+1)
+    now = datetime.now(timezone.utc)
+    grace_cutoff = now - timedelta(days=3)
+
+    search_priority_expr = func.coalesce(Plan.search_priority, 1).label("search_priority")
+    is_featured_expr = func.coalesce(Plan.is_featured, False).label("is_featured")
+    plan_badge_expr = Plan.badge.label("plan_badge")
+
+    # 1. Montagem da Query Principal com JOIN antecipado (Elimina N+1 e aplica Entitlements T4.2)
     if distance_expr is not None:
         stmt = select(
             Business,
             Category.name.label("category_name"),
             Category.slug.label("category_slug"),
             distance_expr.label("distance_km"),
+            search_priority_expr,
+            is_featured_expr,
+            plan_badge_expr,
         )
     else:
         stmt = select(
             Business,
             Category.name.label("category_name"),
             Category.slug.label("category_slug"),
+            search_priority_expr,
+            is_featured_expr,
+            plan_badge_expr,
         )
 
     stmt = (
@@ -79,6 +95,13 @@ async def search_nearby_businesses(
             (BusinessCategory.business_id == Business.id) & (BusinessCategory.is_primary.is_(True)),
         )
         .outerjoin(Category, Category.id == BusinessCategory.category_id)
+        .outerjoin(
+            Subscription,
+            (Subscription.owner_user_id == Business.owner_user_id)
+            & (Subscription.status.in_(["active", "grace_period"]))
+            & (Subscription.current_period_end >= grace_cutoff),
+        )
+        .outerjoin(Plan, Plan.id == Subscription.plan_id)
         .where(
             Business.status == "approved",
             Business.owner_paused.is_(False),
@@ -144,16 +167,18 @@ async def search_nearby_businesses(
             )
         )
 
-    # 4. Ordenação inteligente: Verificadas primeiro, proximidade (se disponível), depois criação
+    # 4. Ordenação inteligente: Planos pagos (prioridade) primeiro, verificadas, proximidade, criação
     if has_coords and user_point is not None:
         user_geog = cast(user_point, Geography)
         stmt = stmt.order_by(
+            func.coalesce(Plan.search_priority, 1).desc(),
             Business.is_verified.desc(),
             func.ST_Distance(Business.location, user_geog).asc().nulls_last(),
             Business.created_at.desc(),
         )
     else:
         stmt = stmt.order_by(
+            func.coalesce(Plan.search_priority, 1).desc(),
             Business.is_verified.desc(),
             Business.created_at.desc(),
         )
@@ -180,14 +205,28 @@ async def search_nearby_businesses(
 
     items = []
     for row in returned_rows:
-        if distance_expr is not None and len(row) >= 4:
+        if distance_expr is not None and len(row) >= 7:
+            b, cat_name, cat_slug, dist, s_prio, is_feat, p_badge = (
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6]
+            )
+            calculated_distance = float(dist) if dist is not None else None
+        elif distance_expr is None and len(row) >= 6:
+            b, cat_name, cat_slug, s_prio, is_feat, p_badge = (
+                row[0], row[1], row[2], row[3], row[4], row[5]
+            )
+            calculated_distance = None
+        elif distance_expr is not None and len(row) >= 4:
             b, cat_name, cat_slug, dist = row[0], row[1], row[2], row[3]
             calculated_distance = float(dist) if dist is not None else None
+            is_feat = False
+            p_badge = None
         else:
             b = row[0]
             cat_name = row[1] if len(row) > 1 else None
             cat_slug = row[2] if len(row) > 2 else None
             calculated_distance = None
+            is_feat = False
+            p_badge = None
 
         c_name = cat_name or "Serviços"
         c_slug = cat_slug or "servicos"
@@ -214,6 +253,8 @@ async def search_nearby_businesses(
             "logo_url": b.logo_url,
             "banner_url": b.banner_url,
             "is_verified": b.is_verified,
+            "is_featured": bool(is_feat),
+            "badge": p_badge or ("Destaque" if is_feat else None),
             "distance_km": calculated_distance,
             "has_whatsapp": bool(b.whatsapp),
             "contact_url": f"/go/whatsapp/{b.id}",
@@ -221,6 +262,7 @@ async def search_nearby_businesses(
             "status": "approved",
             "serves_customer_location": getattr(b, "serves_at_customer", False) or b.service_mode in ("at_customer", "both"),
         })
+
 
     return {
         "page": page,

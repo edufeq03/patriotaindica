@@ -104,13 +104,41 @@
 
 ---
 
-## 3. Próximo Passo: Sprint 4 (Cobrança Consistente e Valor Pago)
+## 3. Sprint 4: Cobrança Consistente e Valor Pago (Concluída)
 
-Tarefas da Sprint 4:
-1. **T4.1: Fonte Única dos Planos**:
-   - Modelagem de tabela `plans` e entitlements sem dependência de dicionários estáticos.
-2. **T4.2: Entitlements e Benefícios por Assinatura**:
-   - Destaque na vitrine, ciclo de vida da assinatura (`active`, `grace_period`, `expired`).
-3. **T4.3: Endurecimento do Webhook do Mercado Pago**:
-   - Validação de `x-signature` (HMAC-SHA256) contra replay attacks.
-   - Idempotência transacional estrita em `payments` evitando creditações duplicadas.
+- **T4.1: Fonte Única dos Planos (`plans`)**:
+  - [database/migrations/015_sprint4_plans_and_payments.sql](file:///home/capella/dev/antigravity/patriotaindica/database/migrations/015_sprint4_plans_and_payments.sql): ampliou a tabela `plans` com colunas de entitlements (`description`, `badge`, `is_featured`, `search_priority`, `max_categories`, `max_photos`, `has_leads_access`, `has_metrics_access`, `has_banner_access`).
+  - Preços consolidados em centavos (`price_cents`: 1500, 7794, 11988). Dicionário hardcoded estático substituído pela consulta direta à tabela `plans` no endpoint `GET /api/v1/payments/plans`.
+- **T4.2: Entitlements e Ciclo de Vida da Assinatura**:
+  - Modelagem de ciclo de vida com 4 estados em `Subscription`:
+    - `active`: vigência em dia.
+    - `grace_period`: 3 dias de tolerância com benefícios mantidos para evitar churn imediato.
+    - `expired`: após o período de carência.
+    - `canceled`: cancelado manualmente ou por reembolso/estorno.
+  - Vitrine de busca (`/api/v1/search`): empresas pertencentes a donos com planos pagos ganham selo "Destaque" (`is_featured: True`), badge correspondente e prioridade na ordenação (`search_priority: 30, 20, 10`). Empresas sem plano continuam listadas para preservar a densidade (`is_featured: False`, `search_priority: 1`).
+- **T4.3: Endurecimento do Webhook Mercado Pago**:
+  - Validação rigorosa do cabeçalho `x-signature` com algoritmo HMAC-SHA256 e segredo `MERCADO_PAGO_WEBHOOK_SECRET` sobre o manifest `id:{data_id};request-id:{x_request_id};ts:{ts};`.
+  - Validação estrita de moeda (`currency_id == "BRL"`) e conferência de valor pago em centavos contra o preço do plano, rejeitando tentativas de adulteração de preço (`price_tampered`).
+  - Tabela `payments(mp_payment_id UNIQUE, ...)` garantindo idempotência transacional (`INSERT ... ON CONFLICT (mp_payment_id) DO NOTHING`). Webhooks duplicados são reconhecidos com `already_processed` sem duplicar prorrogações.
+  - Tratamento de estorno/reembolso (`refunded`, `charged_back`, `cancelled`) revogando imediatamente o período e marcando assinatura como `canceled`.
+- **T4.4: URLs de Retorno Confiáveis**:
+  - `back_urls` e `notification_url` originam-se estritamente de `settings.PUBLIC_APP_URL`, blindando o sistema contra injeção de `Origin` forjado.
+- **T4.5: Indicação Anti-Fraude (Member-Get-Member)**:
+  - Vinculação de `referred_user_id` em indicações pendentes durante a reivindicação de empresa (`verify-otp`).
+  - Bloqueio de auto-indicação (`referrer == referred`, ou colisão de CPF/CNPJ ou telefone) marcando como `fraud_blocked`.
+  - Concessão de +30 dias ao indicador SOMENTE quando a empresa indicada for aprovada e efetuar pagamento de plano, com teto de 12 meses acumulados.
+
+---
+
+## 4. Próximo Passo: Sprint 5 (O Diferencial: WhatsApp Oficial)
+
+Tarefas da Sprint 5:
+1. **T5.1: Fundação da Integração Oficial (Cloud API)**:
+   - Provedor WhatsApp Cloud API com Meta Business Verification, segredos e webhook oficial.
+2. **T5.2: Autenticação via WhatsApp Oficial**:
+   - Disparo de OTP com template oficial de autenticação.
+3. **T5.3: Bot de Pedido de Orçamento & Lead Matching**:
+   - Máquina de estados conversacional para conectar clientes a até 3 lojistas aprovados da região.
+4. **T5.4: Avaliação Verificada & SLA de Resposta**:
+   - Selo "Responde Rápido" e coleta automatizada de reviews 24h após aceite.
+

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # Mercado Pago & Monetização (Fase 1: per_owner | Fase 2: per_business)
     MERCADO_PAGO_ACCESS_TOKEN: Optional[str] = None
     MERCADO_PAGO_PUBLIC_KEY: Optional[str] = None
+    MERCADO_PAGO_WEBHOOK_SECRET: Optional[str] = None
     BILLING_MODE: str = "per_owner"  # 'per_owner' ou 'per_business'
     PUBLIC_APP_URL: str = "https://patriotaindica.com"
 
