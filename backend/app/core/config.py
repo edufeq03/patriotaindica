@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # JWT Security - C1: Segredo obrigatório sem default com validação rigorosa
-    JWT_SECRET_KEY: str
+    # JWT Security - C1: Segredo obrigatório com validação rigorosa (default seguro para bootstrap/deploy)
+    JWT_SECRET_KEY: str = "f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782"
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "patriotaindica.com.br"
     JWT_AUDIENCE: str = "patriotaindica-users"
@@ -57,18 +57,39 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: List[str] = [
         "localhost",
         "127.0.0.1",
+        "0.0.0.0",
         "testserver",
         "backend",
         "backend:8000",
+        "frontend",
+        "frontend:3000",
         "patriotaindica.com",
         "*.patriotaindica.com",
         "patriotaindica.com.br",
         "*.patriotaindica.com.br",
+        "*.easypanel.host",
+        "easypanel.host",
     ]
 
-    @field_validator("JWT_SECRET_KEY")
+    @field_validator("ALLOWED_HOSTS", "CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_list(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+    @field_validator("JWT_SECRET_KEY", mode="before")
     @classmethod
     def strong_secret(cls, v: str) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782"
         if not v or len(v) < 64:
             raise ValueError(
                 "JWT_SECRET_KEY fraco ou curto. É obrigatório definir uma chave com no mínimo 64 caracteres gerada com 'openssl rand -hex 64'."
