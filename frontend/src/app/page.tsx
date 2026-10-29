@@ -576,14 +576,25 @@ export default function HomePage() {
               <span className="hidden sm:inline">Carta de Princípios</span>
             </button>
 
-            {/* Atalho para o Painel do Lojista (Etapa 4) */}
+            {/* Atalho para o Painel da Empresa */}
             <Link
               href="/painel-empresa"
-              className="text-xs px-3 py-1.5 rounded-xl border border-amber-900/60 hover:border-amber-600 bg-amber-950/30 text-amber-300 hover:text-amber-200 transition-all flex items-center gap-1.5 font-medium shadow-sm"
-              title="Área exclusiva da empresa"
+              className="text-xs px-2.5 sm:px-3 py-1.5 rounded-xl border border-amber-900/60 hover:border-amber-600 bg-amber-950/30 text-amber-300 hover:text-amber-200 transition-all flex items-center gap-1.5 font-semibold shadow-sm"
+              title="Área exclusiva da empresa parceira"
             >
               <Store className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden md:inline">Painel da Empresa</span>
+              <span className="hidden sm:inline">Painel da Empresa</span>
+              <span className="sm:hidden">Painel</span>
+            </Link>
+
+            {/* Atalho para o Painel Admin */}
+            <Link
+              href="/admin"
+              className="text-xs px-2 sm:px-2.5 py-1.5 rounded-xl border border-slate-700/80 hover:border-slate-500 bg-slate-900/80 text-slate-300 hover:text-white transition-all flex items-center gap-1.5 font-medium shadow-sm"
+              title="Portal da Moderação e Administração"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Admin</span>
             </Link>
 
             {/* Link para Planos */}
@@ -594,7 +605,6 @@ export default function HomePage() {
               <Award className="w-3.5 h-3.5 text-amber-400" />
               <span>Planos do Clube</span>
             </a>
-
 
             <button
               onClick={() => setShowApplicationModal(true)}
@@ -1871,13 +1881,18 @@ export default function HomePage() {
             <BrasilLogo size={20} className="w-5 h-5 !rounded-md" />
             <span>© 2026 Patriota Indica. A rede de confiança da livre iniciativa e valores tradicionais.</span>
           </div>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <button onClick={() => setShowManifestoModal(true)} className="hover:text-amber-300">
               Carta de Princípios
             </button>
             <Link href="/termos" className="hover:text-amber-300">Termos de Uso</Link>
             <Link href="/privacidade" className="hover:text-amber-300">Política de Privacidade (LGPD)</Link>
-            <Link href="/painel-empresa" className="text-amber-400 hover:underline">Painel da Empresa</Link>
+            <Link href="/painel-empresa" className="text-amber-400 font-semibold hover:underline flex items-center gap-1">
+              <Store className="w-3.5 h-3.5" /> Painel da Empresa
+            </Link>
+            <Link href="/admin" className="text-slate-400 hover:text-white hover:underline flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Painel Admin
+            </Link>
           </div>
         </div>
       </footer>

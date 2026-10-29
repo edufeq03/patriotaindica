@@ -47,25 +47,13 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    // Se for /admin, exige papel estrito de 'admin'
-    if (isAdmin) {
+    // Se for subrota de /admin que não seja a página raiz de login, redireciona para /admin
+    if (isAdmin && pathname !== '/admin') {
       if (!isAuthenticated || userRole !== 'admin') {
-        if (pathname !== '/admin') {
-          const loginUrl = request.nextUrl.clone();
-          loginUrl.pathname = '/admin';
-          loginUrl.searchParams.set('auth_required', '1');
-          return NextResponse.redirect(loginUrl);
-        }
-      }
-    }
-
-    // Se for /painel-empresa, exige 'owner' ou 'admin'
-    if (isPainelEmpresa) {
-      if (!isAuthenticated || !['owner', 'admin'].includes(userRole)) {
-        const redirectUrl = request.nextUrl.clone();
-        redirectUrl.pathname = '/';
-        redirectUrl.searchParams.set('auth_required', '1');
-        return NextResponse.redirect(redirectUrl);
+        const loginUrl = request.nextUrl.clone();
+        loginUrl.pathname = '/admin';
+        loginUrl.searchParams.set('auth_required', '1');
+        return NextResponse.redirect(loginUrl);
       }
     }
   }

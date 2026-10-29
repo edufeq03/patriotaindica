@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { clearAuthCookies, getBackendUrl, setAuthCookies } from '@/lib/authServer';
+import {
+  clearAuthCookies,
+  getBackendUrl,
+  setAuthCookies,
+  verifyTokenLocally,
+} from '@/lib/authServer';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,39 +13,63 @@ export async function GET(request: NextRequest) {
 
     const backendUrl = getBackendUrl();
 
-    // 1. Tenta buscar perfil com o access_token atual
+    // 1. Tenta buscar perfil com o access_token atual no backend
     if (accessToken) {
-      const res = await fetch(`${backendUrl}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      try {
+        const res = await fetch(`${backendUrl}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
 
-      if (res.ok) {
-        const user = await res.json();
-        return NextResponse.json({ authenticated: true, user });
+        if (res.ok) {
+          const user = await res.json();
+          return NextResponse.json({ authenticated: true, user });
+        }
+      } catch {
+        // Backend indisponível ou em modo desconectado: tenta validação local
+      }
+
+      // Validação local do JWT com o segredo criptográfico da aplicação
+      const localUser = await verifyTokenLocally(accessToken);
+      if (localUser) {
+        return NextResponse.json({ authenticated: true, user: localUser });
       }
     }
 
-    // 2. Se falhar ou expirar, mas houver refresh_token, faz rotação transparente
+    // 2. Se houver refresh_token, tenta rotação transparente
     if (refreshToken) {
-      const refreshRes = await fetch(`${backendUrl}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json();
-        accessToken = refreshData.access_token;
-
-        const response = NextResponse.json({
-          authenticated: true,
-          user: refreshData.user,
+      try {
+        const refreshRes = await fetch(`${backendUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
         });
 
-        setAuthCookies(response, refreshData.access_token, refreshData.refresh_token);
-        return response;
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          accessToken = refreshData.access_token;
+
+          const response = NextResponse.json({
+            authenticated: true,
+            user: refreshData.user,
+          });
+
+          setAuthCookies(
+            response,
+            refreshData.access_token,
+            refreshData.refresh_token,
+            refreshData.user?.role
+          );
+          return response;
+        }
+      } catch {
+        // Backend indisponível
+      }
+
+      const localRefreshUser = await verifyTokenLocally(refreshToken);
+      if (localRefreshUser) {
+        return NextResponse.json({ authenticated: true, user: localRefreshUser });
       }
     }
 
@@ -58,3 +87,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

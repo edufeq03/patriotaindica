@@ -1,0 +1,520 @@
+================================================================================
+PATRIOTA INDICA - MÓDULO "VAGAS" (v1)
+Selo "Contratando" + título da vaga no card da empresa, candidatura por WhatsApp
+================================================================================
+
+Como usar: cole este documento inteiro na outra IA de código, junto com o
+projeto. A seção 15 traz o prompt mestre. As seções 12 e 13 trazem as sprints e
+os testes obrigatórios.
+
+--------------------------------------------------------------------------------
+1. OBJETIVO E ESCOPO
+--------------------------------------------------------------------------------
+Objetivo: permitir que empresas aprovadas na rede sinalizem vagas abertas
+("Vagas para atendente", "Vagas para recepcionista") de forma simples, e que o
+candidato fale direto com a empresa pelo WhatsApp.
+
+DENTRO DO ESCOPO (MVP)
+  - Até 3 vagas ativas por empresa (título, descrição curta opcional, tipo de
+    contrato, quantidade de vagas).
+  - Selo "Contratando" e até 2 títulos no card da empresa; filtro "Contratando"
+    na busca; página pública /vagas por cidade.
+  - Botão "Quero me candidatar" que abre o WhatsApp DA EMPRESA com mensagem
+    pronta, passando por /go para medir o interesse.
+  - Moderação automática do texto + fila do admin + denúncia.
+  - Validade automática (30 dias), renovação e encerramento pelo dono.
+
+FORA DO ESCOPO (de propósito)
+  - Banco de currículos/pessoas e candidatura DENTRO da plataforma: a
+    plataforma NÃO coleta nem guarda dados de candidatos nesta versão (menos
+    risco de LGPD e menos alvo para ataque). Ver fase 2 (seção 14).
+  - Salário, ranking de candidatos, mensagens internas.
+  - QUALQUER campo, pergunta ou filtro sobre convicção política, religiosa ou
+    ideologia do candidato ou da vaga (ver seção 2).
+
+--------------------------------------------------------------------------------
+2. PRINCÍPIOS (jurídicos e de segurança)
+--------------------------------------------------------------------------------
+Aviso: não é parecer jurídico. Validar os Termos desta funcionalidade com
+advogado trabalhista/de proteção de dados antes de publicar.
+
+  P1. A vaga descreve CARGO e CONDIÇÕES DE TRABALHO (atividades, horário, local,
+      requisitos profissionais). Proibido exigir ou filtrar por: convicção
+      política ou religiosa, idade (salvo regras legais de aprendiz/estágio),
+      sexo/gênero, estado civil, filhos, cor/raça/etnia, aparência, foto.
+      Motivo: Constituição art. 5º VIII, Lei 9.029/95 (acesso ao emprego), Lei
+      7.716/89 (negar emprego por religião e outros motivos é crime) e LGPD
+      (opinião política e crença religiosa são dados sensíveis; finalidade
+      discriminatória é vedada).
+  P2. A empresa pode descrever sua cultura de forma geral e positiva ("empresa
+      familiar, valorizamos compromisso e atendimento"). O candidato decide se
+      se identifica. A plataforma não pergunta nem pontua crenças do candidato.
+  P3. Sem coleta de dados do candidato no MVP: a conversa acontece no WhatsApp
+      entre candidato e empresa. A plataforma só registra um evento ANÔNIMO de
+      clique (para métricas).
+  P4. Nenhuma cobrança do candidato, nunca. Anúncio que peça taxa, depósito,
+      investimento ou compra é golpe e é removido.
+  P5. O status da vaga NUNCA é definido pelo cliente: só pelo serviço (moderação
+      automática) ou pelo admin. Lição da auditoria: o dono não pode se
+      autoaprovar nem reativar o que o admin bloqueou.
+
+--------------------------------------------------------------------------------
+3. PRÉ-REQUISITOS (do relatório de análise v2)
+--------------------------------------------------------------------------------
+NÃO construir este módulo sobre a base vulnerável. Antes, concluir:
+  - Sprint 0 completa (rotas perigosas removidas, erros sem vazamento, JWT).
+  - T1.2 (status de curadoria só pelo admin; owner_paused separado de status).
+  - T1.5 (roles de banco com menor privilégio e RLS efetivo).
+  - T2.3 (rate limit com IP real, Redis único, fail-closed) e T2.4 (Turnstile).
+  - Rota Next /go repassando X-Forwarded-For ao backend.
+Se algum item acima ainda não existir, implementar o mínimo necessário dele
+antes e sinalizar na entrega da Sprint V1.
+
+--------------------------------------------------------------------------------
+4. MODELO DE DADOS (migration NNN_job_openings.sql, aplicada pelo role migrator)
+--------------------------------------------------------------------------------
+CREATE TYPE job_status AS ENUM
+  ('pending_review','active','expired','closed','rejected');
+CREATE TYPE job_contract_type AS ENUM
+  ('clt','temporario','meio_periodo','estagio','aprendiz','autonomo');
+
+CREATE TABLE job_openings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  title VARCHAR(60) NOT NULL,
+  title_normalized VARCHAR(60) NOT NULL,
+  description VARCHAR(280),
+  contract_type job_contract_type NOT NULL,
+  openings_count SMALLINT NOT NULL DEFAULT 1 CHECK (openings_count BETWEEN 1 AND 20),
+  status job_status NOT NULL DEFAULT 'pending_review',
+  owner_paused BOOLEAN NOT NULL DEFAULT FALSE,      -- pausa do dono
+  admin_hold BOOLEAN NOT NULL DEFAULT FALSE,        -- bloqueio do admin/denúncias
+  moderation_flags TEXT[] NOT NULL DEFAULT '{}',    -- categorias detectadas
+  rejection_code VARCHAR(40),
+  published_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  renewed_count SMALLINT NOT NULL DEFAULT 0 CHECK (renewed_count <= 2),
+  close_reason VARCHAR(30),                         -- hired_here | hired_other | gave_up | other
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX uq_job_business_title
+  ON job_openings (business_id, title_normalized)
+  WHERE status IN ('pending_review','active');
+CREATE INDEX idx_jobs_public
+  ON job_openings (published_at DESC)
+  WHERE status = 'active' AND NOT owner_paused AND NOT admin_hold;
+CREATE INDEX idx_jobs_business ON job_openings (business_id);
+CREATE INDEX idx_jobs_expiry ON job_openings (expires_at) WHERE status = 'active';
+
+-- Limite de 3 vagas abertas por empresa (com trava contra corrida)
+CREATE OR REPLACE FUNCTION jobs_enforce_limit() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(NEW.business_id::text));
+  IF NEW.status IN ('pending_review','active') AND (
+       SELECT count(*) FROM job_openings
+        WHERE business_id = NEW.business_id
+          AND status IN ('pending_review','active')
+          AND id <> NEW.id) >= 3 THEN
+    RAISE EXCEPTION 'JOB_LIMIT_REACHED' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER trg_jobs_limit BEFORE INSERT OR UPDATE OF status ON job_openings
+  FOR EACH ROW EXECUTE FUNCTION jobs_enforce_limit();
+
+-- Log de decisões (append-only: REVOKE UPDATE/DELETE do app_rw)
+CREATE TABLE job_review_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES job_openings(id) ON DELETE CASCADE,
+  actor VARCHAR(10) NOT NULL,            -- system | admin | owner
+  actor_id UUID,
+  action VARCHAR(30) NOT NULL,           -- auto_publish, flag_review, approve, reject, hold, release, expire, close, renew
+  from_status job_status,
+  to_status job_status,
+  reason_code VARCHAR(40),
+  flags TEXT[],
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Denúncias (sem dados pessoais: IP só em hash com sal rotativo)
+CREATE TABLE job_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES job_openings(id) ON DELETE CASCADE,
+  reason VARCHAR(20) NOT NULL,           -- golpe | discriminacao | improprio | outro
+  details VARCHAR(200),
+  ip_hash VARCHAR(64) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX uq_job_report_daily
+  ON job_reports (job_id, ip_hash, (created_at::date));
+
+-- Termos de moderação (editáveis pelo admin)
+CREATE TABLE moderation_terms (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  term_normalized VARCHAR(80) NOT NULL UNIQUE,
+  category VARCHAR(20) NOT NULL,         -- discriminacao | golpe | improprio | conviccao
+  severity VARCHAR(10) NOT NULL,         -- block | review
+  match_type VARCHAR(10) NOT NULL DEFAULT 'phrase',  -- word | phrase
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Métricas de candidatura: reaproveitar contact_events
+ALTER TABLE contact_events ADD COLUMN job_id UUID REFERENCES job_openings(id) ON DELETE SET NULL;
+-- (ajustar o CHECK/enum de event_type para aceitar 'job_apply')
+
+VISIBILIDADE PÚBLICA de uma vaga = status='active' AND NOT owner_paused AND NOT
+admin_hold AND expires_at > now() AND a empresa está approved e não pausada/
+suspensa (derivado em consulta; empresa fora do ar esconde as vagas SEM mudar o
+status delas).
+
+RLS (testar conectando como app_rw):
+  - Público: SELECT só de vagas com a visibilidade acima.
+  - Dono: SELECT/INSERT/UPDATE nas vagas das próprias empresas (via contexto
+    app.user_id); NUNCA grava status, admin_hold, moderation_flags,
+    rejection_code, published_at, expires_at (colunas privilegiadas: só o
+    serviço/admin, por privilégio de coluna ou trigger).
+  - Admin: acesso total. job_review_log: INSERT apenas.
+
+Consulta de busca: acrescentar ao card da empresa
+  LEFT JOIN LATERAL (
+    SELECT count(*) AS n,
+           (array_agg(j.title ORDER BY j.published_at DESC))[1:2] AS titles
+      FROM job_openings j
+     WHERE j.business_id = b.id AND j.status = 'active'
+       AND NOT j.owner_paused AND NOT j.admin_hold AND j.expires_at > now()
+  ) jobs ON TRUE
+  e filtro opcional hiring=true (jobs.n > 0).
+
+--------------------------------------------------------------------------------
+5. REGRAS DE CONTEÚDO E MODERAÇÃO AUTOMÁTICA
+--------------------------------------------------------------------------------
+5.1 Validação de formato (reaproveitar a lógica do niche_validator)
+  - title: 3-60 caracteres; description: até 280; texto simples (sem HTML).
+  - Normalizar com NFKC; permitir letras latinas com acento, números, espaço e
+    pontuação simples. Rejeitar: URLs, e-mails, telefones, sequências de 4+
+    dígitos, "R$", emojis, repetição de caracteres (aaaa), caixa alta > 70%.
+  - title_normalized = sem acento, minúsculo, pontuação removida, espaços
+    colapsados (usado na unicidade e na moderação).
+  - Escapar na saída; nunca dangerouslySetInnerHTML.
+
+5.2 Termos monitorados (tabela moderation_terms, normalizados, por palavra ou
+    frase; seed inicial a ser revisado pelo dono do projeto)
+  a) discriminacao (block): "boa aparencia", "aparencia", "foto obrigatoria",
+     "apenas mulheres", "apenas homens", "somente feminino", "somente masculino",
+     "sexo", "estado civil", "solteiro", "casado", "sem filhos", "ate 25 anos",
+     "idade entre", "jovem" (como requisito), "cor", "raca", "etnia".
+     EXCEÇÃO: com contract_type em (aprendiz, estagio), termos de idade e de
+     escolaridade/matrícula são permitidos (regras legais próprias).
+  b) conviccao (block): exigência de posição política ou religiosa, por exemplo
+     "de direita", "de esquerda", "partido", "patriota", "cristao", "evangelico",
+     "catolico", "ateu", "alinhado politicamente". A vaga não pode exigir
+     convicção. Mostrar mensagem explicando a política do produto.
+  c) golpe (block): "taxa de inscricao", "taxa", "deposito", "pagamento
+     adiantado", "pix", "investimento", "kit", "multinivel", "renda extra
+     garantida", "ganhe r$", "trabalhe de casa ganhando", "sem experiencia
+     ganhe", "cadastre-se em".
+  d) improprio (block): conteúdo sexual/adulto, armas, drogas, atividade ilegal.
+  e) review (severity=review): termos ambíguos (ex.: "disponibilidade total",
+     "boa presenca", "perfil comercial agressivo") enviam para a fila do admin
+     em vez de bloquear.
+  Casamento por palavra inteira/frase sobre texto normalizado (sem acento,
+  minúsculo), tolerando substituições simples (0->o, 1->i, 3->e, 4->a, 5->s).
+  A lista é editável pelo admin (CRUD em /admin/moderation-terms, com log).
+
+5.3 Resultado da moderação
+  - Algum termo block de discriminacao/conviccao: HTTP 422 com código
+    JOB_CONTENT_BLOCKED e mensagem EDUCATIVA, sem revelar a lista de termos:
+    "Não é permitido exigir idade, sexo, estado civil, aparência, religião ou
+    posição política. Descreva as atividades e as condições de trabalho."
+    Nada é salvo (a empresa corrige e reenvia).
+  - Termo block de golpe/improprio: 422 JOB_CONTENT_BLOCKED; registra STRIKE
+    para a empresa. 3 strikes => bloqueio de publicação de vagas e alerta ao
+    admin.
+  - Termo review: vaga salva como pending_review (vai para a fila).
+  - Limpa e empresa em situação regular (approved, sem strikes recentes): se
+    JOBS_AUTO_PUBLISH=true publica na hora (status active, published_at=now,
+    expires_at=now+30 dias) e registra "auto_publish" no log; se false, vai
+    para a fila.
+  - Amostragem: o admin revisa uma amostra aleatória das vagas auto-publicadas
+    (ex.: 10%) e todas as de empresas com histórico de strike.
+
+5.4 Denúncia
+  - Botão "Denunciar vaga" (golpe, discriminação, impróprio, outro).
+  - 3 denúncias de IPs distintos (hash) em 24 h => admin_hold=true
+    automaticamente SÓ NESSA VAGA e entra na fila do admin. A empresa NÃO é
+    suspensa por denúncia. O dono não consegue remover o admin_hold.
+  - Turnstile + rate limit; dedupe por (vaga, ip_hash, dia).
+
+--------------------------------------------------------------------------------
+6. CICLO DE VIDA
+--------------------------------------------------------------------------------
+Estados e quem pode transitar:
+  (novo) -> pending_review ........ serviço (criação) quando precisa de revisão
+  (novo) -> active ................ serviço (auto-publicação)
+  pending_review -> active ........ admin (approve)
+  pending_review -> rejected ...... admin (reject com reason_code)
+  active -> expired ............... job agendado quando expires_at passou
+  active/expired -> active ........ dono, via RENOVAR (máx. 2 vezes; reexecuta
+                                    a moderação; +30 dias)
+  active -> closed ................ dono (vaga preenchida/desistiu; guarda
+                                    close_reason) ou admin
+  qualquer -> rejected ............ admin
+  Pausa do dono: flag owner_paused (não muda status). Bloqueio do admin ou das
+  denúncias: flag admin_hold (só o admin remove).
+  O dono NUNCA muda status diretamente nem remove admin_hold.
+
+Jobs agendados (cron/worker, a cada hora):
+  - expirar vagas vencidas (log "expire");
+  - lembrete 3 dias antes de expirar (WhatsApp via provider/utility template;
+    fallback e-mail), só se houver consentimento de contato;
+  - limpar eventos de clique > 90 dias (agregar por dia antes).
+
+--------------------------------------------------------------------------------
+7. API (FastAPI) - sempre response_model, extra="forbid", erros genéricos+request_id
+--------------------------------------------------------------------------------
+PÚBLICO
+  GET  /api/v1/jobs?city=&state=&category_id=&q=&lat=&lng=&radius_km=&page=
+       -> lista de PublicJobCard: id, title, description (curta), contract_type,
+          openings_count, published_at, expires_at, business{id, name, slug,
+          logo_url, city, neighborhood, category_name, distance_km?}.
+       SEM whatsapp/telefone. Tetos: q<=80, radius<=100, page<=50.
+  GET  /api/v1/jobs/{id} -> PublicJobDetail (404 se não visível).
+  GET  /api/v1/businesses/search ... -> card ganha hiring{count, titles[0..2]};
+       novo parâmetro hiring=true.
+  GET  /api/v1/go/job/{job_id}
+       -> valida visibilidade da vaga, registra contact_events(event_type=
+          'job_apply', job_id) com dedupe e filtro de bots (mesmas regras do
+          /go), monta o link wa.me do NÚMERO DA EMPRESA no servidor e redireciona
+          (302). Mensagem pronta:
+          "Olá! Vi a vaga de {titulo} no Patriota Indica e tenho interesse."
+          (título sanitizado, truncado, URL-encoded). Rate limit 30/min por IP
+          real.
+  POST /api/v1/jobs/{id}/report  (JSON: reason, details<=200, turnstile_token)
+
+DONO (dependency get_owned_business em TODAS; nunca confiar em business_id do corpo)
+  GET    /api/v1/owner/businesses/{bid}/jobs
+  POST   /api/v1/owner/businesses/{bid}/jobs
+         corpo: title, description?, contract_type, openings_count?
+         -> roda moderação; devolve {status, flags_public, message}
+  PUT    /api/v1/owner/jobs/{id}      (edição de título/descrição; reexecuta a
+         moderação; vaga ativa que reprovar no filtro volta a pending_review ou
+         é recusada conforme a regra 5.3)
+  POST   /api/v1/owner/jobs/{id}/pause | /resume   (só owner_paused)
+  POST   /api/v1/owner/jobs/{id}/close  (close_reason)
+  POST   /api/v1/owner/jobs/{id}/renew
+  Limites: 5 criações/dia por empresa; 20/dia por IP; 10 edições/dia por vaga.
+
+ADMIN (role admin + log)
+  GET  /api/v1/triage/jobs?status=pending_review&flag=&business_id=
+  POST /api/v1/triage/jobs/{id}/decision
+       corpo: action (approve|reject|hold|release), reason_code (enum), note?
+  GET/POST/PUT /api/v1/admin/moderation-terms
+  GET  /api/v1/admin/jobs/metrics
+
+Erros: JOB_CONTENT_BLOCKED, JOB_LIMIT_REACHED (409), JOB_DUPLICATE (409),
+JOB_NOT_FOUND (404), RATE_LIMITED (429). Nunca devolver texto de exceção.
+
+--------------------------------------------------------------------------------
+8. FRONTEND (Next.js; componentes pequenos por feature)
+--------------------------------------------------------------------------------
+Card da empresa
+  - Selo "Contratando" + até 2 chips com os títulos ("Atendente",
+    "Recepcionista"). Toque abre um painel (bottom sheet) com as vagas
+    (título, contrato, publicada há X dias) e botão "Quero me candidatar" por
+    vaga (aponta para /go/job/{id}). Aviso: "Nenhuma empresa séria cobra para
+    contratar. Denuncie."
+  - Filtro "Contratando" na busca e ordenação "Vagas recentes".
+Página /vagas (Server Component)
+  - Filtros por cidade e categoria; lista de cards; metadata/SEO; paginação.
+  - JSON-LD JobPosting SOMENTE se a vaga tiver descrição com pelo menos 40
+    caracteres (campos: title, description, datePosted, validThrough,
+    hiringOrganization, jobLocation, employmentType). Escapar "<" como
+    \u003c. Conferir as diretrizes vigentes do Google para vagas.
+Painel da empresa -> aba "Vagas"
+  - Lista com status e explicação de cada estado; criar/editar com contador de
+    caracteres e validação ao vivo; mensagem educativa quando bloqueado;
+    pausar, renovar, encerrar (perguntar o motivo).
+  - Dica fixa: "Descreva atividades, horário, local e requisitos profissionais.
+    Não peça foto, idade, estado civil, religião ou posição política."
+Admin -> "Vagas"
+  - Fila com flags, ações aprovar/rejeitar/segurar/liberar, atalho para o
+    CRUD de termos e métricas.
+Geral: mobile-first, acessibilidade (foco, labels, contraste), estados de erro
+e vazio (sem vagas na cidade: convidar a seguir a cidade/ lista de espera).
+
+--------------------------------------------------------------------------------
+9. WHATSAPP
+--------------------------------------------------------------------------------
+MVP: link wa.me com mensagem pronta para o número da empresa (via /go/job).
+Notificações ao dono (lembrete de expiração, resumo semanal de cliques de
+candidatura) usando a interface WhatsAppProvider do plano v2 (template de
+UTILIDADE, com consentimento registrado e opt-out).
+Fase 2 (depende da Sprint 5 do plano v2): "candidatar-se pelo bot oficial"
+coletando só nome, bairro, experiência e disponibilidade, com consentimento
+específico, sem perguntas sensíveis e retenção curta (ex.: 30 dias).
+
+--------------------------------------------------------------------------------
+10. LGPD E TERMOS
+--------------------------------------------------------------------------------
+  - MVP: nenhum dado de candidato fica na plataforma. Eventos de clique são
+    anônimos (job_id, hash de IP com sal rotativo, data); retenção de 90 dias e
+    agregação diária.
+  - Atualizar Termos de Uso e Política de Privacidade: regras de anúncio de vagas
+    (itens proibidos da seção 2), responsabilidade do anunciante (a empresa é
+    controladora dos dados que receber no WhatsApp), direito da plataforma de
+    remover vagas, canal de denúncia, nenhuma cobrança do candidato.
+  - Aceite dos Termos de Vagas no primeiro uso (registrar versão/data na tabela
+    consents do plano v2).
+  - Aviso na interface sobre golpes de vaga.
+  - Estágio e aprendiz têm regras próprias (Lei 11.788/2008 e legislação do
+    aprendiz): exibir lembrete no formulário e conferir com contador/advogado.
+
+--------------------------------------------------------------------------------
+11. SEGURANÇA ESPECÍFICA DO MÓDULO
+--------------------------------------------------------------------------------
+Ameaças e controles:
+  - Vagas falsas/golpe/phishing -> filtro de termos e links, strikes, denúncia,
+    moderação por amostragem, empresa precisa estar aprovada.
+  - Vaga discriminatória (risco jurídico) -> bloqueio automático com mensagem
+    educativa e log de decisão.
+  - IDOR/edição de vaga alheia -> get_owned_business em toda rota; testes
+    cruzando empresas diferentes.
+  - Mass assignment de status/admin_hold -> DTO com extra="forbid" e colunas
+    privilegiadas fora do alcance do app (privilégio de coluna/trigger).
+  - XSS no título/descrição -> texto simples, escape na saída, CSP com nonce,
+    JSON-LD escapado.
+  - Spam e abuso -> rate limit Redis com IP real, fail-closed, Turnstile em
+    denúncia, teto de vagas por empresa e por dia.
+  - Inflar cliques/sabotagem -> dedupe, filtro de bots, hash de IP, retenção
+    curta, denúncia só segura a vaga (nunca derruba a empresa).
+  - Raspagem de contatos -> número não vai na API/lista; só no redirecionamento
+    com rate limit.
+  - DoS na listagem -> índices parciais, paginação com teto, parâmetros
+    limitados, statement_timeout no role.
+  - Auditoria -> job_review_log append-only (REVOKE UPDATE/DELETE).
+
+--------------------------------------------------------------------------------
+12. SPRINTS DO MÓDULO
+--------------------------------------------------------------------------------
+SPRINT V1 - FUNDAÇÃO E MODERAÇÃO (2-3 dias)
+  T-V1.1 Migration (tipos, tabelas, índices, trigger de limite, log, termos,
+         coluna job_id em contact_events) + privilégios/RLS para app_rw.
+  T-V1.2 Models, DTOs (public/owner/admin), validador de formato (reuso do
+         niche_validator) e job_service: criar, editar, pausar, encerrar,
+         renovar, expirar.
+  T-V1.3 Serviço de moderação (normalização, matching por palavra/frase,
+         exceções aprendiz/estágio, strikes) + seed inicial de termos.
+  T-V1.4 Rotas do dono com get_owned_business, limites e erros padronizados.
+  T-V1.5 Worker/cron: expirar vagas, lembretes, limpeza de eventos.
+  Aceite: dono cria vaga limpa => active (se auto-publish) com expires_at +30
+  dias; vaga com termo discriminatório => 422 e nada salvo; 4ª vaga => 409;
+  dono não consegue alterar status por nenhum endpoint; log registra tudo.
+
+SPRINT V2 - INTERFACE E CURADORIA (2-3 dias)
+  T-V2.1 Admin: fila de vagas, decisão, CRUD de termos, métricas básicas.
+  T-V2.2 Painel da empresa: aba Vagas (criar/editar/pausar/renovar/encerrar,
+         mensagens educativas, contador de caracteres).
+  T-V2.3 Card da empresa: selo "Contratando", chips de título, bottom sheet com
+         vagas; filtro e ordenação na busca (LATERAL do item 4).
+  Aceite: card mostra selo só quando há vaga visível; empresa pausada/suspensa
+  esconde o selo; filtro "Contratando" funciona e usa índice.
+
+SPRINT V3 - PÚBLICO, MÉTRICAS E CONFIANÇA (2 dias)
+  T-V3.1 /api/v1/go/job/{id} (dedupe, bots, rate limit, wa.me no servidor) e
+         ajuste do route handler Next para repassar o IP real.
+  T-V3.2 Página /vagas (SSR, filtros, SEO, JSON-LD condicional, sitemap).
+  T-V3.3 Denúncia (Turnstile, dedupe, threshold de admin_hold) e aviso de golpe.
+  T-V3.4 Notificações ao dono (expiração, resumo de cliques) via provider.
+  T-V3.5 Termos/Privacidade atualizados + registro de aceite.
+  Aceite: clique em "Quero me candidatar" abre WhatsApp com a mensagem correta e
+  registra 1 evento; 3 denúncias distintas seguram a vaga; /vagas só lista vagas
+  visíveis.
+
+SPRINT V4 - FASE 2 (OPCIONAL, depois da Sprint 5 do plano v2)
+  Candidatura pelo bot oficial; resumo ao lojista; banco de pessoas somente com
+  RIPD/DPIA, consentimento específico, retenção limitada e exclusão fácil.
+
+--------------------------------------------------------------------------------
+13. TESTES OBRIGATÓRIOS (CI, com PostgreSQL/PostGIS e Redis reais)
+--------------------------------------------------------------------------------
+  - Dono de A não lista/edita/pausa/encerra vagas da empresa B (404/403).
+  - Nenhum endpoint do dono altera status, admin_hold, published_at, expires_at
+    (teste por tentativa de campos extras => 422).
+  - Dono não remove admin_hold nem reativa vaga rejeitada/segura.
+  - Vaga com termos de discriminação/convicção/golpe => 422 e nada persiste;
+    exceção de idade/escolaridade só em aprendiz/estágio.
+  - Normalização: "BOA   Aparência", "b0a aparencia" e variações são detectados.
+  - 4ª vaga aberta => 409 (inclusive em criações concorrentes).
+  - Empresa não aprovada/pausada/suspensa => vagas invisíveis no público.
+  - Vaga expira sozinha; renovar reexecuta moderação; 3ª renovação => 409.
+  - /go/job: vaga invisível => 404; bot e HEAD não registram; 31º clique/min =>
+    429; número da empresa nunca aparece em /jobs nem na busca.
+  - Denúncia: dedupe por IP/dia; 3 IPs distintos => admin_hold; empresa não é
+    suspensa; sem Turnstile => 422.
+  - XSS: <script> e HTML no título/descrição são rejeitados ou escapados;
+    JSON-LD escapa "<".
+  - Banco como app_rw: sem leitura de vaga não visível por público; sem UPDATE em
+    colunas privilegiadas; sem UPDATE/DELETE em job_review_log.
+  - Admin: decisões gravam log; amostragem de auto-publicadas funciona.
+  - Erros 500 sem texto interno e com request_id.
+
+--------------------------------------------------------------------------------
+14. FASE 2 (NÃO IMPLEMENTAR AGORA): BANCO DE PESSOAS/CANDIDATURA INTERNA
+--------------------------------------------------------------------------------
+Exigir antes: RIPD/DPIA, base legal e consentimento específico por finalidade,
+retenção definida (ex.: 12 meses), exclusão e portabilidade, minimização (sem
+foto, idade, estado civil, documento, nem campos de convicção), "currículo cego"
+opcional para a empresa, controle de acesso por empresa aprovada, trilha de
+auditoria de quem viu cada perfil, criptografia em repouso, e teste de intrusão
+específico. Alimentação por candidatos que escolheram entrar (inclusive vindos
+de outros produtos, SOMENTE com novo consentimento).
+
+--------------------------------------------------------------------------------
+15. PROMPT MESTRE (cole na outra IA de código, junto com o projeto)
+--------------------------------------------------------------------------------
+Você é um engenheiro sênior full-stack e de segurança (FastAPI async, SQLAlchemy,
+PostgreSQL/PostGIS, Redis, Next.js 16). Implemente o módulo "Vagas" descrito
+neste documento no projeto "Patriota Indica", sprint por sprint (V1 -> V2 -> V3).
+
+REGRAS
+ 1. Confirme os pré-requisitos da seção 3. Se faltar algum, implemente o mínimo
+    necessário e avise antes de seguir.
+ 2. Uma sprint por vez. Ao final: rode os testes, liste arquivos alterados e
+    critérios de aceite cumpridos, e PARE para confirmação.
+ 3. Nenhuma DDL em runtime: tudo por migration numerada, aplicada pelo role
+    migrator. Nunca editar migration antiga.
+ 4. O status da vaga e as flags admin_hold/moderation_flags só mudam pelo serviço
+    de moderação ou pelo admin autenticado, sempre com registro em
+    job_review_log. Nenhum endpoint do dono aceita esses campos.
+ 5. Rotas finas: validação -> serviço -> DTO de saída tipado (response_model);
+    entrada com extra="forbid", Literal/Enum e limites; nunca retornar ORM.
+ 6. Erros genéricos com request_id; falhar fechado em rate limit, RLS e
+    moderação. Sem except que engole falhas.
+ 7. Nenhum dado do candidato é coletado ou guardado nesta versão. O número de
+    WhatsApp da empresa nunca aparece nas respostas públicas de vagas/busca.
+ 8. A moderação NUNCA aceita exigência de convicção política/religiosa, idade
+    (fora aprendiz/estágio), sexo, estado civil, aparência ou foto, nem cobrança
+    do candidato. A mensagem de bloqueio é educativa e não expõe a lista de
+    termos.
+ 9. Escreva os testes da seção 13 junto de cada tarefa; testes que dependam de
+    banco usam PostgreSQL/PostGIS e Redis reais.
+10. Explique em 1-2 linhas o motivo de cada decisão relevante. Em dúvida sobre
+    regra de negócio, pergunte antes de implementar.
+
+DECISÕES QUE O DONO AINDA PRECISA CONFIRMAR (pergunte na Sprint V1/V2)
+ a) Auto-publicar vagas limpas (recomendado, com amostragem) ou revisar todas?
+ b) Limite de 3 vagas por empresa e validade de 30 dias estão bons?
+ c) Lista inicial de termos bloqueados (revisar com advogado).
+ d) Incluir faixa salarial opcional numa versão futura?
+ e) Tipos de contrato exibidos (incluir "autônomo"? exige aviso sobre vínculo).
+
+Comece pela SPRINT V1.
+
+================================================================================
+FIM DO DOCUMENTO
+================================================================================

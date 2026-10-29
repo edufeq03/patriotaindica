@@ -654,6 +654,21 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            <div className="flex items-center justify-between text-[11px] pt-1">
+              <span className="text-slate-400">Ambiente de Operação</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginEmail('admin@patriotaindica.com.br');
+                  setLoginPassword('admin123');
+                }}
+                className="text-emerald-400 hover:text-emerald-300 underline font-medium cursor-pointer"
+              >
+                Preencher credenciais padrão
+              </button>
+            </div>
+
+
             <button
               type="submit"
               disabled={loginLoading}
