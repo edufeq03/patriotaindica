@@ -163,9 +163,14 @@ export default function OwnerJobsSection({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.detail || 'Erro ao salvar vaga de emprego.');
+        throw new Error(
+          data.detail ||
+            (res.status >= 500
+              ? 'Erro interno no servidor ao salvar a vaga. Tente novamente em instantes.'
+              : 'Erro ao salvar vaga de emprego.')
+        );
       }
 
       setShowCreateModal(false);
