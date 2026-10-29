@@ -408,6 +408,18 @@ export default function HomePage() {
       effectiveMode = 'online';
     }
 
+    if (!applicationForm.accepted_manifesto) {
+      setApplicationErrorMsg("É necessário aceitar e subscrever a Carta de Princípios da Liberdade.");
+      setApplicationSubmitting(false);
+      return;
+    }
+
+    if (!applicationForm.accepted_privacy) {
+      setApplicationErrorMsg("É necessário concordar com os Termos de Uso e a Política de Privacidade (LGPD).");
+      setApplicationSubmitting(false);
+      return;
+    }
+
     const payload = {
       name: applicationForm.name.trim(),
       description: applicationForm.description.trim() || null,
@@ -428,6 +440,9 @@ export default function HomePage() {
       proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
       referred_by_code: applicationForm.referred_by_code.trim() || null,
       show_full_address: false,
+      consent_carta_principios: Boolean(applicationForm.accepted_manifesto),
+      consent_termos: Boolean(applicationForm.accepted_privacy),
+      consent_privacidade: Boolean(applicationForm.accepted_privacy),
     };
 
     try {
@@ -447,7 +462,33 @@ export default function HomePage() {
           if (typeof data.detail === 'string') {
             msg = data.detail;
           } else if (Array.isArray(data.detail)) {
-            msg = data.detail.map((err: any) => err.msg || err.message).join(' | ');
+            const fieldLabels: Record<string, string> = {
+              consent_carta_principios: 'Carta de Princípios',
+              consent_termos: 'Termos de Serviço',
+              consent_privacidade: 'Política de Privacidade',
+              name: 'Nome do Negócio',
+              whatsapp: 'WhatsApp de Atendimento',
+              neighborhood: 'Bairro',
+              city: 'Cidade',
+              state: 'Estado (UF)',
+              document_number: 'CNPJ / CPF',
+              description: 'Descrição',
+              service_radius_km: 'Raio de Atendimento',
+            };
+
+            msg = data.detail
+              .map((err: any) => {
+                const fieldName = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : '';
+                const label = fieldLabels[fieldName] || fieldName;
+                if (err.msg === 'Field required') {
+                  return `O campo "${label}" é obrigatório.`;
+                }
+                if (label) {
+                  return `${label}: ${err.msg || err.message}`;
+                }
+                return err.msg || err.message;
+              })
+              .join(' | ');
           }
         }
         setApplicationErrorMsg(msg);
