@@ -30,8 +30,8 @@ DEFAULT_PLANS_SEED = [
     {
         "id": "mensal",
         "name": "Plano Mensal",
-        "price_cents": 1500,
-        "monthly_equivalent_cents": 1500,
+        "price_cents": 1490,
+        "monthly_equivalent_cents": 1490,
         "duration_months": 1,
         "description": "Flexibilidade total, sem fidelidade. Cancele quando quiser.",
         "badge": "Sem Fidelidade",

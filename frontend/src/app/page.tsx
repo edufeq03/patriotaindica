@@ -1247,7 +1247,7 @@ export default function HomePage() {
                 <div className="pt-2 border-t border-[#182836]">
                   <div className="flex items-baseline gap-1">
                     <span className="text-xs text-slate-400">R$</span>
-                    <span className="text-3xl font-black text-white">15,00</span>
+                    <span className="text-3xl font-black text-white">14,90</span>
                     <span className="text-xs text-slate-400">/mês</span>
                   </div>
                   <span className="text-[11px] text-slate-500 block mt-0.5">Cobrança mensal avulsa</span>

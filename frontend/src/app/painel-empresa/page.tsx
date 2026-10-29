@@ -1786,7 +1786,7 @@ function BusinessDashboardContent() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xl font-black text-white">R$ 15,00</div>
+                  <div className="text-xl font-black text-white">R$ 14,90</div>
                   <span className="text-[10px] text-slate-400">por mês</span>
                 </div>
                 <p className="text-[11px] text-slate-400">Sem fidelidade. Cancele quando quiser.</p>
