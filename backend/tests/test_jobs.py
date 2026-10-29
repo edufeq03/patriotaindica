@@ -306,3 +306,29 @@ def test_job_public_visibility_property():
     business.status = "suspended"
     assert job.is_publicly_visible is False
 
+
+@pytest.mark.asyncio
+async def test_notify_expiring_jobs_worker():
+    """Valida identificação de vagas a expirar em até 3 dias (T-V3.4)."""
+    from backend.app.services.job_worker import notify_expiring_jobs
+
+    mock_db = AsyncMock()
+    now = datetime.now(timezone.utc)
+    business = Business(id=uuid.uuid4(), name="Oficina do Zé", status="approved")
+    expiring_job = JobOpening(
+        id=uuid.uuid4(),
+        title="Mecânico Geral",
+        status="active",
+        expires_at=now + timedelta(days=2),
+        renewed_count=0,
+        business=business,
+    )
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [(expiring_job, business)]
+    mock_db.execute.return_value = mock_result
+
+    count = await notify_expiring_jobs(mock_db)
+    assert count == 1
+
+

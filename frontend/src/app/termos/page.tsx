@@ -92,7 +92,31 @@ export default function TermosPage() {
           </section>
 
           <section className="space-y-4 text-sm leading-relaxed text-slate-300">
-            <h2 className="text-lg font-bold text-white">4. Propriedade Intelectual e Uso de Marcas</h2>
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5 text-emerald-400" />
+              4. Divulgação de Vagas de Trabalho e Oportunidades
+            </h2>
+            <p>
+              Empresas aprovadas na curadoria da plataforma podem divulgar até 3 (três) vagas de emprego simultâneas. A respeito do Módulo de Vagas, vigoram as seguintes regras estritas e inegociáveis:
+            </p>
+            <ul className="list-disc list-inside space-y-2 pl-2 text-slate-300">
+              <li>
+                <strong>Gratuidade Total ao Candidato:</strong> É expressamente proibida a cobrança de taxa de inscrição, pagamento antecipado, compra de kits ou condicionamento de contratação à realização de cursos pagos. Anúncios suspeitos ensejam bloqueio imediato e banimento da empresa.
+              </li>
+              <li>
+                <strong>Vedações Legais e Não Discriminação (Lei nº 9.029/95 e Art. 5º da CF):</strong> O anúncio deve limitar-se à descrição das atribuições, local, horário e requisitos técnicos. É estritamente vedada a exigência de fotos, idade (salvo estritamente nos limites da Lei da Aprendizagem e do Estágio), sexo, estado civil, religião ou posicionamento político.
+              </li>
+              <li>
+                <strong>Ausência de Retenção de Currículos:</strong> O Patriota Indica não coleta, não armazena e não analisa dados curriculares dos candidatos. O contato é realizado de forma autônoma e direta entre o interessado e a empresa via WhatsApp. A empresa anunciante é a única controladora dos dados que vier a receber.
+              </li>
+              <li>
+                <strong>Canal de Denúncias e Moderação Ativa:</strong> Todos os anúncios de vagas contam com mecanismo de denúncia pública. O Patriota Indica reserva-se o direito soberano de aplicar bloqueio preventivo (<em>admin_hold</em>) ou excluir qualquer anúncio a qualquer momento para resguardar a comunidade.
+              </li>
+            </ul>
+          </section>
+
+          <section className="space-y-4 text-sm leading-relaxed text-slate-300">
+            <h2 className="text-lg font-bold text-white">5. Propriedade Intelectual e Uso de Marcas</h2>
             <p>
               As marcas, logotipos, slogans e imagens enviadas pelos estabelecimentos permanecem sob titularidade exclusiva de seus respectivos donos, que concedem ao Patriota Indica licença não exclusiva, gratuita e de âmbito nacional para exibição na plataforma.
             </p>
@@ -102,14 +126,14 @@ export default function TermosPage() {
           </section>
 
           <section className="space-y-4 text-sm leading-relaxed text-slate-300">
-            <h2 className="text-lg font-bold text-white">5. Denúncias e Desativação de Perfil</h2>
+            <h2 className="text-lg font-bold text-white">6. Denúncias e Desativação de Perfil</h2>
             <p>
               A plataforma disponibiliza canal aberto para denúncias de inconsistências cadastrais, atendimento inidôneo ou descumprimento dos preceitos comunitários. O titular poderá, a qualquer tempo, solicitar o desligamento ou exclusão permanente do seu perfil através do e-mail <strong>contato@patriotaindica.com.br</strong> ou pelo formulário de privacidade.
             </p>
           </section>
 
           <section className="space-y-4 text-sm leading-relaxed text-slate-300">
-            <h2 className="text-lg font-bold text-white">6. Foro e Disposições Gerais</h2>
+            <h2 className="text-lg font-bold text-white">7. Foro e Disposições Gerais</h2>
             <p>
               Estes Termos de Uso são regidos pelas leis da República Federativa do Brasil. Para a resolução de eventuais litígios que não possam ser dirimidos amigavelmente, fica eleito o Foro da Comarca de Campinas/SP, com expressa renúncia a qualquer outro, por mais privilegiado que seja.
             </p>

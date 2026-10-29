@@ -145,6 +145,9 @@ export default function PrivacidadePage() {
                 <strong>Canais de Contato:</strong> Telefone/WhatsApp e e-mail comercial. Finalidade: permitir que potenciais clientes entrem em contato direto com seu negócio.
               </li>
               <li>
+                <strong>Candidatos a Vagas de Emprego (Privacidade por Design):</strong> O Patriota Indica não coleta, não retém e não armazena currículos, nomes, documentos ou dados cadastrais de candidatos a vagas de trabalho. O contato é estabelecido de forma 100% direta entre o interessado e o WhatsApp oficial da empresa anunciante, que figura como única controladora dos dados curriculares recebidos.
+              </li>
+              <li>
                 <strong>Dados de Acesso Técnico:</strong> Registros de conexão (endereço IP criptografado em hash e timestamp), estritamente para segurança contra fraudes e cumprimento do Marco Civil da Internet (Lei nº 12.965/2014, art. 15).
               </li>
             </ul>

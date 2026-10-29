@@ -591,6 +591,16 @@ export default function HomePage() {
               <span className="hidden sm:inline">Carta de Princípios</span>
             </button>
 
+            {/* Atalho para Vagas de Emprego (Sprint V3) */}
+            <Link
+              href="/vagas"
+              className="text-xs px-2.5 py-1.5 rounded-xl border border-amber-500/30 hover:border-amber-400 bg-amber-500/10 text-amber-300 hover:text-white transition-all flex items-center gap-1.5 font-bold shadow-sm"
+              title="Ver vagas de trabalho abertas na rede"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Vagas</span>
+            </Link>
+
             {/* Atalho para o Painel da Empresa */}
             <Link
               href="/painel-empresa"
@@ -1943,6 +1953,9 @@ export default function HomePage() {
             <button onClick={() => setShowManifestoModal(true)} className="hover:text-amber-300">
               Carta de Princípios
             </button>
+            <Link href="/vagas" className="text-amber-300 hover:underline flex items-center gap-1 font-semibold">
+              <Briefcase className="w-3.5 h-3.5" /> Vagas de Emprego
+            </Link>
             <Link href="/termos" className="hover:text-amber-300">Termos de Uso</Link>
             <Link href="/privacidade" className="hover:text-amber-300">Política de Privacidade (LGPD)</Link>
             <Link href="/painel-empresa" className="text-amber-400 font-semibold hover:underline flex items-center gap-1">
