@@ -42,9 +42,11 @@ import {
   Lock,
   LogOut,
   KeyRound,
-  ShieldAlert
+  ShieldAlert,
+  Briefcase
 } from 'lucide-react';
 
+import AdminJobsSection from '@/components/AdminJobsSection';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES } from '@/lib/mockData';
 import { Business, Category, ReviewLog } from '@/lib/types';
 
@@ -159,7 +161,7 @@ export default function AdminDashboardPage() {
   };
 
 
-  const [activeTab, setActiveTab] = useState<'triage' | 'assisted' | 'csv' | 'invitations' | 'categories' | 'metrics'>('triage');
+  const [activeTab, setActiveTab] = useState<'triage' | 'jobs' | 'assisted' | 'csv' | 'invitations' | 'categories' | 'metrics'>('triage');
 
   // Estado de Categorias com persistência
   const [categoriesList, setCategoriesList] = useState<Category[]>(() => {
@@ -788,6 +790,18 @@ export default function AdminDashboardPage() {
           </button>
 
           <button
+            onClick={() => setActiveTab('jobs')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${
+              activeTab === 'jobs'
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-[#0d151c]'
+            }`}
+          >
+            <Briefcase className="w-4 h-4" />
+            Vagas & Moderação
+          </button>
+
+          <button
             onClick={() => setActiveTab('assisted')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all ${
               activeTab === 'assisted'
@@ -1223,6 +1237,11 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* ABA: VAGAS & MODERAÇÃO */}
+        {/* ========================================================================= */}
+        {activeTab === 'jobs' && <AdminJobsSection />}
 
         {/* ========================================================================= */}
         {/* ABA 2: CADASTRO ASSISTIDO (CANAL A - SEMENTE) */}

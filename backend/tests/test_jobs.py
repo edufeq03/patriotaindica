@@ -234,3 +234,75 @@ async def test_job_worker_expires_overdue_jobs():
     expired_count = await expire_overdue_jobs(mock_db)
     assert expired_count == 1
     assert overdue_job.status == "expired"
+
+
+@pytest.mark.asyncio
+async def test_admin_decision_approve_reject_and_hold():
+    """Valida decisões de moderação pelo administrador (T-V2.1)."""
+    from backend.app.services.job_service import admin_review_job
+
+    mock_db = AsyncMock()
+    admin = User(id=uuid.uuid4(), role="admin")
+    job = JobOpening(
+        id=uuid.uuid4(),
+        title="Torneiro Mecânico",
+        status="pending_review",
+        admin_hold=False,
+    )
+
+    # 1. Aprovação
+    await admin_review_job(job, admin, action="approve", reason_code=None, note="OK", db=mock_db)
+    assert job.status == "active"
+    assert job.published_at is not None
+    assert job.expires_at is not None
+    assert job.admin_hold is False
+
+    # 2. Bloqueio (Hold)
+    await admin_review_job(job, admin, action="hold", reason_code="denuncia", note="Sob análise", db=mock_db)
+    assert job.admin_hold is True
+
+    # 3. Liberação (Release)
+    await admin_review_job(job, admin, action="release", reason_code=None, note="Liberado", db=mock_db)
+    assert job.admin_hold is False
+
+    # 4. Rejeição
+    await admin_review_job(job, admin, action="reject", reason_code="conteudo_inadequado", note="Reprovada", db=mock_db)
+    assert job.status == "rejected"
+    assert job.rejection_code == "conteudo_inadequado"
+
+
+def test_job_public_visibility_property():
+    """Valida a regra de visibilidade pública (P1, Seção 4)."""
+    now = datetime.now(timezone.utc)
+    business = Business(id=uuid.uuid4(), status="approved", owner_paused=False)
+
+    # Vaga ativa regular
+    job = JobOpening(
+        id=uuid.uuid4(),
+        status="active",
+        owner_paused=False,
+        admin_hold=False,
+        expires_at=now + timedelta(days=10),
+        business=business,
+    )
+    assert job.is_publicly_visible is True
+
+    # Se pausada pelo dono -> invisível
+    job.owner_paused = True
+    assert job.is_publicly_visible is False
+    job.owner_paused = False
+
+    # Se em admin_hold -> invisível
+    job.admin_hold = True
+    assert job.is_publicly_visible is False
+    job.admin_hold = False
+
+    # Se expirada -> invisível
+    job.expires_at = now - timedelta(days=1)
+    assert job.is_publicly_visible is False
+    job.expires_at = now + timedelta(days=10)
+
+    # Se empresa suspensa -> invisível
+    business.status = "suspended"
+    assert job.is_publicly_visible is False
+

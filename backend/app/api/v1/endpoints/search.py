@@ -11,6 +11,7 @@ from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
 from backend.app.models.business import Business, BusinessCategory
 from backend.app.models.category import Category
+from backend.app.models.jobs import JobOpening
 from backend.app.models.subscription import Plan, Subscription
 
 logger = logging.getLogger("patriotaindica.search")
@@ -30,6 +31,7 @@ async def search_nearby_businesses(
     service_mode: Optional[str] = Query(None, description="'at_location', 'at_customer', 'both', 'online'"),
     state: Optional[str] = Query(None, max_length=2, description="Filtro por UF"),
     city: Optional[str] = Query(None, max_length=100, description="Filtro por Cidade"),
+    hiring: Optional[bool] = Query(None, description="Filtrar apenas empresas com vagas ativas"),
     page: int = Query(1, ge=1, le=50, description="Página"),
     limit: int = Query(50, ge=1, le=200, description="Itens por página"),
     db: AsyncSession = Depends(get_db),
@@ -167,7 +169,21 @@ async def search_nearby_businesses(
             )
         )
 
-    # 4. Ordenação inteligente: Planos pagos (prioridade) primeiro, verificadas, proximidade, criação
+    # 4. Filtro de Empresas Contratando (T-V2.3)
+    if hiring is True:
+        active_jobs_subquery = (
+            select(JobOpening.business_id)
+            .where(
+                JobOpening.status == "active",
+                JobOpening.owner_paused == False,
+                JobOpening.admin_hold == False,
+                JobOpening.expires_at > now,
+            )
+            .scalar_subquery()
+        )
+        stmt = stmt.where(Business.id.in_(active_jobs_subquery))
+
+    # 5. Ordenação inteligente: Planos pagos (prioridade) primeiro, verificadas, proximidade, criação
     if has_coords and user_point is not None:
         user_geog = cast(user_point, Geography)
         stmt = stmt.order_by(
@@ -203,6 +219,28 @@ async def search_nearby_businesses(
     has_more = len(rows) > limit
     returned_rows = rows[:limit]
 
+    # Agregação em lote de vagas ativas das empresas retornadas (elimina N+1)
+    b_ids = [row[0].id for row in returned_rows if hasattr(row[0], "id")]
+    b_jobs_map: Dict[Any, List[str]] = {}
+    if b_ids:
+        try:
+            jobs_stmt = (
+                select(JobOpening.business_id, JobOpening.title)
+                .where(
+                    JobOpening.business_id.in_(b_ids),
+                    JobOpening.status == "active",
+                    JobOpening.owner_paused == False,
+                    JobOpening.admin_hold == False,
+                    JobOpening.expires_at > now,
+                )
+                .order_by(JobOpening.published_at.desc().nullslast(), JobOpening.created_at.desc())
+            )
+            j_res = await db.execute(jobs_stmt)
+            for b_id, title in j_res.all():
+                b_jobs_map.setdefault(b_id, []).append(title)
+        except Exception as j_err:
+            logger.warning("Falha ao buscar vagas no resultado da busca: %s", j_err)
+
     items = []
     for row in returned_rows:
         if distance_expr is not None and len(row) >= 7:
@@ -230,6 +268,7 @@ async def search_nearby_businesses(
 
         c_name = cat_name or "Serviços"
         c_slug = cat_slug or "servicos"
+        job_titles = b_jobs_map.get(b.id, [])
 
         items.append({
             "id": str(b.id),
@@ -265,8 +304,12 @@ async def search_nearby_businesses(
             "whatsapp": b.whatsapp,  # Mantido para retrocompatibilidade com UI existente
             "status": "approved",
             "serves_customer_location": getattr(b, "serves_at_customer", False) or b.service_mode in ("at_customer", "both"),
+            "hiring": {
+                "active": len(job_titles) > 0,
+                "count": len(job_titles),
+                "titles": job_titles[:3],
+            },
         })
-
 
     return {
         "page": page,
@@ -275,3 +318,4 @@ async def search_nearby_businesses(
         "total": len(items),
         "results": items,
     }
+

@@ -313,3 +313,221 @@ async def renew_job_opening(
     await db.commit()
     await db.refresh(job)
     return job
+
+
+async def admin_review_job(
+    job: JobOpening,
+    admin_user: User,
+    action: str,
+    reason_code: Optional[str],
+    note: Optional[str],
+    db: AsyncSession,
+) -> JobOpening:
+    """
+    Decisão de moderação pelo administrador (T-V2.1):
+    action in ('approve', 'reject', 'hold', 'release')
+    """
+    old_status = job.status
+    now = datetime.now(timezone.utc)
+
+    if action == "approve":
+        job.status = "active"
+        job.admin_hold = False
+        job.owner_paused = False
+        job.rejection_code = None
+        if not job.published_at:
+            job.published_at = now
+        job.expires_at = now + timedelta(days=30)
+    elif action == "reject":
+        job.status = "rejected"
+        job.admin_hold = False
+        job.rejection_code = reason_code or "conteudo_inadequado"
+    elif action == "hold":
+        job.admin_hold = True
+    elif action == "release":
+        job.admin_hold = False
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ação de moderação '{action}' inválida.",
+        )
+
+    log_entry = JobReviewLog(
+        job_id=job.id,
+        actor="admin",
+        actor_id=admin_user.id,
+        action=action,
+        from_status=old_status,
+        to_status=job.status,
+        reason_code=reason_code,
+        note=note or f"Decisão administrativa '{action}' aplicada pelo curador.",
+    )
+    db.add(log_entry)
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+async def admin_get_jobs_queue(
+    db: AsyncSession,
+    status_filter: Optional[str] = None,
+    flag: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """
+    Retorna fila de vagas para curadoria administrativa com dados da empresa e contagem de denúncias.
+    """
+    from backend.app.models.jobs import JobReport
+
+    stmt = (
+        select(
+            JobOpening,
+            Business.name.label("business_name"),
+            Business.city.label("business_city"),
+            Business.state.label("business_state"),
+            Business.cnpj.label("business_cnpj"),
+            func.count(JobReport.id).label("reports_count"),
+        )
+        .join(Business, Business.id == JobOpening.business_id)
+        .outerjoin(JobReport, JobReport.job_id == JobOpening.id)
+        .group_by(JobOpening.id, Business.id)
+        .order_by(JobOpening.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    if status_filter and status_filter != "all":
+        stmt = stmt.where(JobOpening.status == status_filter)
+    if flag == "hold":
+        stmt = stmt.where(JobOpening.admin_hold == True)
+    elif flag == "paused":
+        stmt = stmt.where(JobOpening.owner_paused == True)
+
+    results = (await db.execute(stmt)).all()
+    out = []
+    for row in results:
+        job, b_name, b_city, b_state, b_cnpj, rep_count = row
+        out.append({
+            "id": job.id,
+            "business_id": job.business_id,
+            "business_name": b_name,
+            "business_city": b_city,
+            "business_state": b_state,
+            "business_cnpj": b_cnpj,
+            "title": job.title,
+            "description": job.description,
+            "contract_type": job.contract_type,
+            "openings_count": job.openings_count,
+            "status": job.status,
+            "owner_paused": job.owner_paused,
+            "admin_hold": job.admin_hold,
+            "moderation_flags": job.moderation_flags or [],
+            "rejection_code": job.rejection_code,
+            "published_at": job.published_at,
+            "expires_at": job.expires_at,
+            "renewed_count": job.renewed_count,
+            "close_reason": job.close_reason,
+            "reports_count": rep_count or 0,
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+        })
+    return out
+
+
+async def admin_get_metrics(db: AsyncSession):
+    """
+    Métricas de vagas para o painel de curadoria.
+    """
+    total_active = (await db.execute(
+        select(func.count(JobOpening.id)).where(JobOpening.status == "active")
+    )).scalar() or 0
+
+    total_pending = (await db.execute(
+        select(func.count(JobOpening.id)).where(JobOpening.status == "pending_review")
+    )).scalar() or 0
+
+    total_hold = (await db.execute(
+        select(func.count(JobOpening.id)).where(JobOpening.admin_hold == True)
+    )).scalar() or 0
+
+    total_closed = (await db.execute(
+        select(func.count(JobOpening.id)).where(JobOpening.status == "closed")
+    )).scalar() or 0
+
+    return {
+        "active": total_active,
+        "pending_review": total_pending,
+        "admin_hold": total_hold,
+        "closed": total_closed,
+        "total": total_active + total_pending + total_closed,
+    }
+
+
+async def admin_list_terms(
+    db: AsyncSession,
+    category: Optional[str] = None,
+    active: Optional[bool] = None,
+):
+    stmt = select(ModerationTerm).order_by(ModerationTerm.created_at.desc())
+    if category:
+        stmt = stmt.where(ModerationTerm.category == category)
+    if active is not None:
+        stmt = stmt.where(ModerationTerm.active == active)
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+async def admin_create_term(
+    term: str,
+    category: str,
+    severity: str,
+    match_type: str,
+    db: AsyncSession,
+):
+    norm = normalize_for_moderation(term)
+    existing = (await db.execute(
+        select(ModerationTerm).where(ModerationTerm.term_normalized == norm)
+    )).scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"O termo '{norm}' já existe na lista de moderação.",
+        )
+
+    new_term = ModerationTerm(
+        term_normalized=norm,
+        category=category,
+        severity=severity,
+        match_type=match_type,
+        active=True,
+    )
+    db.add(new_term)
+    await db.commit()
+    await db.refresh(new_term)
+    return new_term
+
+
+async def admin_toggle_term(term_id: uuid.UUID, active: bool, db: AsyncSession):
+    term = (await db.execute(
+        select(ModerationTerm).where(ModerationTerm.id == term_id)
+    )).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="Termo de moderação não encontrado.")
+    term.active = active
+    await db.commit()
+    await db.refresh(term)
+    return term
+
+
+async def admin_delete_term(term_id: uuid.UUID, db: AsyncSession):
+    term = (await db.execute(
+        select(ModerationTerm).where(ModerationTerm.id == term_id)
+    )).scalar_one_or_none()
+    if not term:
+        raise HTTPException(status_code=404, detail="Termo de moderação não encontrado.")
+    await db.delete(term)
+    await db.commit()
+    return {"success": True}
+

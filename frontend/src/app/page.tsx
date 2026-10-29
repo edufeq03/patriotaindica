@@ -39,11 +39,13 @@ import {
   AlertTriangle,
   CreditCard,
   Gift,
-  Users
+  Users,
+  Briefcase
 } from 'lucide-react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
 import { Business, Category, ListingType } from '@/lib/types';
 import ManifestoModal, { MANIFESTO_VERSION } from '@/components/ManifestoModal';
+import BusinessJobsModal from '@/components/BusinessJobsModal';
 import { getBusinessBannerUrl } from '@/lib/categoryBanners';
 
 // Mapeamento de ícones para as categorias
@@ -90,6 +92,8 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<ListingType | 'all'>('all');
   const [maxDistanceKm, setMaxDistanceKm] = useState<number | null>(null);
+  const [hiringOnly, setHiringOnly] = useState(false);
+  const [selectedJobsBusiness, setSelectedJobsBusiness] = useState<any>(null);
 
   // Paginação de cards na vitrine
   const [currentPage, setCurrentPage] = useState(1);
@@ -262,6 +266,12 @@ export default function HomePage() {
           return false;
         }
 
+        // Filtro por empresas contratando (T-V2.3)
+        if (hiringOnly) {
+          const isHiring = (b as any).hiring?.active || (typeof (b as any).hiring?.count === 'number' && (b as any).hiring.count > 0);
+          if (!isHiring) return false;
+        }
+
         // Filtro por categoria
         if (selectedCategory && b.category_slug !== selectedCategory) {
           return false;
@@ -310,12 +320,12 @@ export default function HomePage() {
         };
       })
       .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
-  }, [businesses, userLocation, searchQuery, selectedCategory, selectedType, maxDistanceKm]);
+  }, [businesses, userLocation, searchQuery, selectedCategory, selectedType, maxDistanceKm, hiringOnly]);
 
   // Resetar página ao alterar filtros
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedCategory, selectedType, maxDistanceKm]);
+  }, [searchQuery, selectedCategory, selectedType, maxDistanceKm, hiringOnly]);
 
   // Cálculos de Paginação
   const totalPages = Math.max(1, Math.ceil(filteredBusinesses.length / itemsPerPage));
@@ -761,6 +771,19 @@ export default function HomePage() {
                 >
                   Produtos
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setHiringOnly(!hiringOnly)}
+                  className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 ${
+                    hiringOnly
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                      : 'text-amber-400/90 hover:text-amber-300 hover:bg-[#182836]'
+                  }`}
+                  title="Filtrar empresas com vagas de emprego abertas"
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Contratando</span>
+                </button>
               </div>
             </div>
           </div>
@@ -989,6 +1012,29 @@ export default function HomePage() {
 
                 {/* Footer do Card com CTA WhatsApp */}
                 <div className="p-5 pt-0 space-y-2">
+                  {/* Selo e Ação de Vagas Abertas (T-V2.3) */}
+                  {Boolean((business as any).hiring?.active || (business as any).hiring?.count > 0) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedJobsBusiness(business);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/15 via-emerald-500/15 to-amber-500/15 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-white text-xs font-bold flex items-center justify-between gap-1.5 transition-all shadow-sm group/job"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>
+                          Contratando ({(business as any).hiring.count} {(business as any).hiring.count === 1 ? 'vaga' : 'vagas'})
+                        </span>
+                      </span>
+                      <span className="text-[11px] text-slate-300 font-normal group-hover/job:underline flex items-center gap-0.5">
+                        Ver {(business as any).hiring.titles?.[0] ? `"${(business as any).hiring.titles[0]}"` : 'oportunidades'} →
+                      </span>
+                    </button>
+                  )}
+
                   <a
                     href={formatWhatsAppUrl(business.whatsapp, business.name)}
                     target="_blank"
@@ -1877,6 +1923,13 @@ export default function HomePage() {
         onClose={() => setShowManifestoModal(false)}
         showAcceptButton={showApplicationModal && !applicationForm.accepted_manifesto}
         onAccept={() => setApplicationForm((prev) => ({ ...prev, accepted_manifesto: true }))}
+      />
+
+      {/* Modal de Vagas de Emprego da Empresa */}
+      <BusinessJobsModal
+        business={selectedJobsBusiness}
+        isOpen={Boolean(selectedJobsBusiness)}
+        onClose={() => setSelectedJobsBusiness(null)}
       />
 
       {/* Footer */}

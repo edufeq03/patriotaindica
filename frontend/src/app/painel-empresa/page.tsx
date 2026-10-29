@@ -43,10 +43,12 @@ import {
   Users,
   PlusCircle,
   Sparkles,
-  X
+  X,
+  Briefcase
 } from 'lucide-react';
 import { Suspense } from 'react';
 import ManifestoModal from '@/components/ManifestoModal';
+import OwnerJobsSection from '@/components/OwnerJobsSection';
 
 interface SubscriptionInfo {
   has_subscription: boolean;
@@ -186,6 +188,7 @@ function BusinessDashboardContent() {
   const [businesses, setBusinesses] = useState<OwnerBusiness[]>([]);
   const [selectedBizId, setSelectedBizId] = useState<string>('');
   const [loadingBiz, setLoadingBiz] = useState(false);
+  const [panelTab, setPanelTab] = useState<'profile' | 'jobs'>('profile');
 
   // Modal da Carta de Princípios
   const [showManifestoModal, setShowManifestoModal] = useState(false);
@@ -1062,8 +1065,49 @@ function BusinessDashboardContent() {
               </div>
             )}
 
-            {/* SEÇÃO: ASSINATURA & INDIQUE E GANHE (CLUBE DE NEGÓCIOS) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Barra de Abas de Navegação do Painel */}
+            <div className="flex items-center gap-2 border-b border-[#182836] pb-3">
+              <button
+                type="button"
+                onClick={() => setPanelTab('profile')}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all ${
+                  panelTab === 'profile'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-[#0d151c] border border-[#182836]'
+                }`}
+              >
+                <Building2 className="w-4 h-4" />
+                <span>Perfil da Empresa & Assinatura</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPanelTab('jobs')}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all ${
+                  panelTab === 'jobs'
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-[#0d151c] border border-[#182836]'
+                }`}
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>Vagas de Emprego</span>
+              </button>
+            </div>
+
+            {/* CONTEÚDO DA ABA VAGAS */}
+            {panelTab === 'jobs' && (
+              <OwnerJobsSection
+                businessId={activeBusiness.id}
+                businessName={activeBusiness.name}
+                businessStatus={activeBusiness.status}
+              />
+            )}
+
+            {/* CONTEÚDO DA ABA PERFIL */}
+            {panelTab === 'profile' && (
+              <div className="space-y-6">
+                {/* SEÇÃO: ASSINATURA & INDIQUE E GANHE (CLUBE DE NEGÓCIOS) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Card 1: Status da Assinatura */}
               <div className="p-6 rounded-2xl bg-[#0d151c] border border-[#182836] space-y-5 shadow-xl flex flex-col justify-between">
                 <div className="space-y-4">
@@ -1682,6 +1726,8 @@ function BusinessDashboardContent() {
                 </div>
               </form>
             </div>
+          </div>
+        )}
           </>
         ) : null}
       </main>

@@ -160,3 +160,97 @@ async def redirect_contact_event(
     response = RedirectResponse(url=destination_url, status_code=307)
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+@router.get("/job/{job_id}")
+async def redirect_job_apply(
+    job_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user_agent: str = Header(None),
+    referer: str = Header(None),
+):
+    """
+    Redirecionamento seguro para candidatura de vaga via WhatsApp oficial da empresa (T-V3.1).
+    Registra métrica de conversão em contact_events com job_id e protege contra bots e cliques repetidos.
+    """
+    from datetime import datetime, timezone
+    from backend.app.models.jobs import JobOpening
+
+    client_ip = get_client_ip(request)
+    await check_rate_limit(
+        key=f"ratelimit:redirect_job:{client_ip}",
+        limit=30,
+        window_seconds=60,
+        error_msg="Muitas candidaturas iniciadas. Aguarde um instante.",
+    )
+
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(JobOpening, Business)
+        .join(Business, Business.id == JobOpening.business_id)
+        .where(
+            JobOpening.id == job_id,
+            JobOpening.status == "active",
+            JobOpening.owner_paused == False,
+            JobOpening.admin_hold == False,
+            JobOpening.expires_at > now,
+            Business.status == "approved",
+            Business.owner_paused.is_(False),
+        )
+    )
+    result = await db.execute(stmt)
+    row = result.first()
+    if not row:
+        raise HTTPException(
+            status_code=404,
+            detail="Vaga de emprego não encontrada ou não mais disponível para candidatura.",
+        )
+
+    job, business = row
+
+    if not business.whatsapp:
+        raise HTTPException(
+            status_code=400,
+            detail="A empresa não possui WhatsApp de contato configurado.",
+        )
+
+    # Prevenir cliques de bots e prefetch
+    purpose = request.headers.get("Purpose", "") or request.headers.get("Sec-Purpose", "")
+    is_prefetch = "prefetch" in purpose.lower()
+    ua_str = user_agent or ""
+    is_bot = bool(BOT_USER_AGENT_PATTERN.search(ua_str))
+
+    if not is_prefetch and not is_bot:
+        try:
+            await check_rate_limit(
+                key=f"dedup_job_apply:{client_ip}:{job.id}",
+                limit=1,
+                window_seconds=60,
+            )
+            event = ContactEvent(
+                business_id=business.id,
+                event_type="whatsapp",
+                contact_type="job_apply",
+                job_id=job.id,
+                city=business.city,
+                referrer=referer[:255] if referer else None,
+                user_agent=ua_str[:255] if ua_str else None,
+            )
+            db.add(event)
+            await db.commit()
+        except HTTPException:
+            pass
+
+    clean_number = "".join(filter(str.isdigit, business.whatsapp))
+    if not clean_number.startswith("55") and len(clean_number) in (10, 11):
+        clean_number = f"55{clean_number}"
+
+    job_msg = f"Olá! Vi a vaga de {job.title} no Patriota Indica e gostaria de enviar meu currículo para análise."
+    encoded_msg = urllib.parse.quote(job_msg)
+    destination_url = f"https://wa.me/{clean_number}?text={encoded_msg}"
+
+    response = RedirectResponse(url=destination_url, status_code=307)
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+

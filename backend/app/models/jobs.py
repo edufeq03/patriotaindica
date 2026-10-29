@@ -48,7 +48,7 @@ class JobOpening(Base):
     def is_publicly_visible(self) -> bool:
         """Regra de visibilidade pública conforme Seção 4 da especificação."""
         if self.status != "active" or self.owner_paused or self.admin_hold:
-            return false
+            return False
         now = datetime.now(timezone.utc)
         if self.expires_at and self.expires_at <= now:
             return False

@@ -179,3 +179,60 @@ class JobReportCreate(BaseModel):
     turnstile_token: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+class JobDecisionRequest(BaseModel):
+    action: Literal["approve", "reject", "hold", "release"]
+    reason_code: Optional[str] = Field(None, max_length=40)
+    note: Optional[str] = Field(None, max_length=500)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModerationTermCreate(BaseModel):
+    term: str = Field(..., min_length=2, max_length=80)
+    category: Literal["discriminacao", "conviccao", "golpe", "improprio", "review"]
+    severity: Literal["block", "review"] = "block"
+    match_type: Literal["word", "phrase"] = "phrase"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ModerationTermOut(BaseModel):
+    id: UUID
+    term_normalized: str
+    category: str
+    severity: str
+    match_type: str
+    active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class JobAdminOut(BaseModel):
+    id: UUID
+    business_id: UUID
+    business_name: str
+    business_city: str
+    business_state: str
+    business_cnpj: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    contract_type: str
+    openings_count: int
+    status: str
+    owner_paused: bool
+    admin_hold: bool
+    moderation_flags: List[str] = []
+    rejection_code: Optional[str] = None
+    published_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    renewed_count: int = 0
+    close_reason: Optional[str] = None
+    reports_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
