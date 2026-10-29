@@ -17,6 +17,8 @@ COPY backend/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ /app/backend/
+COPY database/ /app/database/
+
 
 # Garantir diretorio static para uploads e ajustar permissoes
 RUN mkdir -p /app/static/uploads /app/backend/static/uploads && \
