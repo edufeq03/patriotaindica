@@ -1,4 +1,5 @@
 -- ==============================================================================
--- Seed: Curated Categories
+-- Seed: Curated Categories (já aplicadas na migração 004_seed_categories.sql)
 -- ==============================================================================
-\i ../migrations/004_seed_categories.sql
+SELECT 1;
+

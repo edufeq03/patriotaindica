@@ -34,5 +34,25 @@ CREATE TABLE IF NOT EXISTS invitations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Migração da coluna legada token -> token_hash caso a tabela já tenha sido criada pelo schema inicial (001)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token_hash'
+  ) THEN
+    ALTER TABLE invitations RENAME COLUMN token TO token_hash;
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token_hash'
+  ) THEN
+    ALTER TABLE invitations ADD COLUMN token_hash VARCHAR(64) UNIQUE;
+  END IF;
+END $$;
+
+DROP INDEX IF EXISTS idx_invitations_token;
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_business ON invitations(business_id);
+

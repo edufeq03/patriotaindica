@@ -1,20 +1,11 @@
--- ==============================================================================
--- SCRIPT UNIFICADO DE RESET COMPLETO - PATRIOTAIN DICA
--- Limpa o schema public e aplica todas as 19 migrações e sementes iniciais
--- ==============================================================================
-
+-- SCRIPT UNIFICADO DE RESET COMPLETO - PATRIOTA INDICA (gerado automaticamente)
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO CURRENT_USER;
 GRANT ALL ON SCHEMA public TO public;
+CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(150) PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW(), checksum VARCHAR(64) NOT NULL);
 
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    version VARCHAR(150) PRIMARY KEY,
-    applied_at TIMESTAMPTZ DEFAULT NOW(),
-    checksum VARCHAR(64) NOT NULL
-);
-
--- >>> MIGRAÇÃO: 001_initial_schema.sql >>>
+-- >>> MIGRACAO: 001_initial_schema.sql
 -- ==============================================================================
 -- Migration 001: Initial Schema
 -- Description: Core tables, enums, extensions, indices, and triggers for
@@ -255,7 +246,7 @@ FOR EACH ROW EXECUTE FUNCTION businesses_search_vector_update();
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('001_initial_schema.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 002_search_function.sql >>>
+-- >>> MIGRACAO: 002_search_function.sql
 -- ==============================================================================
 -- Migration 002: Spatial Search Function (PostGIS)
 -- Description: Implements get_nearby_businesses function with PostGIS KNN
@@ -366,7 +357,7 @@ $$;
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('002_search_function.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 003_rls_and_permissions.sql >>>
+-- >>> MIGRACAO: 003_rls_and_permissions.sql
 -- ==============================================================================
 -- Migration 003: Row Level Security (RLS) & Sensitive Fields Trigger
 -- Description: Enforces data privacy, access control policies, and
@@ -500,7 +491,7 @@ CREATE POLICY p_reports_admin_select ON reports
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('003_rls_and_permissions.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 004_seed_categories.sql >>>
+-- >>> MIGRACAO: 004_seed_categories.sql
 -- ==============================================================================
 -- Migration 004 / Seed: Initial Curated Categories
 -- Description: Core taxonomy of local services, products, and hybrid businesses
@@ -588,7 +579,7 @@ SET
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('004_seed_categories.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 005_security_hardening_roles_rls.sql >>>
+-- >>> MIGRACAO: 005_security_hardening_roles_rls.sql
 -- ==============================================================================
 -- Migration 005: Security Hardening - FORCE RLS, Database Roles & Transaction Context
 -- Description: Enforces strict row level security (even for table owners),
@@ -687,7 +678,7 @@ CREATE POLICY p_reports_admin_select ON reports
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('005_security_hardening_roles_rls.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 006_national_search_and_geocoding.sql >>>
+-- >>> MIGRACAO: 006_national_search_and_geocoding.sql
 -- ==============================================================================
 -- Migration 006: National Search, Dynamic Geocoding and Location Nullability
 -- Description:
@@ -825,7 +816,7 @@ $$;
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('006_national_search_and_geocoding.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 007_dynamic_niches_and_aliases.sql >>>
+-- >>> MIGRACAO: 007_dynamic_niches_and_aliases.sql
 -- ==============================================================================
 -- Migration 007: Dynamic Niches, Aliases and Moderation (Sec. 4)
 -- Description:
@@ -851,7 +842,7 @@ CREATE INDEX IF NOT EXISTS idx_categories_status ON categories (status);
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('007_dynamic_niches_and_aliases.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 008_owner_pending_changes_and_invitations.sql >>>
+-- >>> MIGRACAO: 008_owner_pending_changes_and_invitations.sql
 -- ==============================================================================
 -- Migration 008: Owner Pending Changes and Secure Token Invitations
 -- Description:
@@ -888,12 +879,32 @@ CREATE TABLE IF NOT EXISTS invitations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Migração da coluna legada token -> token_hash caso a tabela já tenha sido criada pelo schema inicial (001)
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token_hash'
+  ) THEN
+    ALTER TABLE invitations RENAME COLUMN token TO token_hash;
+  ELSIF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'invitations' AND column_name = 'token_hash'
+  ) THEN
+    ALTER TABLE invitations ADD COLUMN token_hash VARCHAR(64) UNIQUE;
+  END IF;
+END $$;
+
+DROP INDEX IF EXISTS idx_invitations_token;
 CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON invitations(token_hash);
 CREATE INDEX IF NOT EXISTS idx_invitations_business ON invitations(business_id);
 
+
 INSERT INTO schema_migrations (version, checksum) VALUES ('008_owner_pending_changes_and_invitations.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 009_lgpd_consent_and_requests.sql >>>
+-- >>> MIGRACAO: 009_lgpd_consent_and_requests.sql
 -- Migration 009: Registro de solicitacoes de privacidade e direitos do titular (LGPD M11)
 CREATE TABLE IF NOT EXISTS data_subject_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -912,7 +923,7 @@ CREATE INDEX IF NOT EXISTS idx_data_subject_requests_status ON data_subject_requ
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('009_lgpd_consent_and_requests.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 010_user_security_columns.sql >>>
+-- >>> MIGRACAO: 010_user_security_columns.sql
 -- Migration 010: Colunas de seguranca da tabela users (C1, C2)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64);
@@ -920,7 +931,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('010_user_security_columns.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 011_service_modes_multi_selection.sql >>>
+-- >>> MIGRACAO: 011_service_modes_multi_selection.sql
 -- Migration 011: Multi-seleção de Métodos de Atendimento (Presencial, Domicílio e Online)
 -- Permite que uma empresa atue em qualquer combinação dos 3 canais simultaneamente.
 
@@ -1071,7 +1082,7 @@ $$;
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('011_service_modes_multi_selection.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 012_monetization_multi_businesses_and_subscriptions.sql >>>
+-- >>> MIGRACAO: 012_monetization_multi_businesses_and_subscriptions.sql
 -- Migration 012: Monetização, Multi-Negócios (Destrave de CPF/CNPJ) e Assinaturas Mercado Pago
 -- Permite que uma mesma pessoa/dona tenha múltiplos negócios vinculados ao mesmo CPF/CNPJ.
 -- Cria as tabelas de Planos, Assinaturas e Indicação (Ganhe 1 Mês Grátis).
@@ -1146,7 +1157,7 @@ CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_user_id)
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('012_monetization_multi_businesses_and_subscriptions.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 013_sprint1_identity_and_curation.sql >>>
+-- >>> MIGRACAO: 013_sprint1_identity_and_curation.sql
 -- ==============================================================================
 -- Migration 013: Sprint 1 - Identidade e Curadoria à Prova de Burla
 -- Normalização de WhatsApp para E.164, flag owner_paused, flag de documento duplicado
@@ -1223,7 +1234,7 @@ CREATE POLICY p_consents_select ON consents
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('013_sprint1_identity_and_curation.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 014_sprint3_cities_and_spatial_indexing.sql >>>
+-- >>> MIGRACAO: 014_sprint3_cities_and_spatial_indexing.sql
 -- ==============================================================================
 -- Migration 014: Sprint 3 - Cidades, Índices Espaciais PostGIS e Lista de Espera (T3.1, T3.4)
 -- ==============================================================================
@@ -1291,7 +1302,7 @@ CREATE POLICY p_city_waitlist_insert ON city_waitlist FOR INSERT WITH CHECK (tru
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('014_sprint3_cities_and_spatial_indexing.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 015_sprint4_plans_and_payments.sql >>>
+-- >>> MIGRACAO: 015_sprint4_plans_and_payments.sql
 -- Migration 015: Sprint 4 - Monetização Consistente, Fonte Única de Planos e Idempotência de Pagamentos
 -- T4.1: Tabela plans como fonte única da verdade com entitlements em centavos
 -- T4.2: Entitlements de visibilidade e prioridade na busca
@@ -1375,7 +1386,7 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_period_end ON subscriptions(current
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('015_sprint4_plans_and_payments.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 016_sprint5_whatsapp_and_leads.sql >>>
+-- >>> MIGRACAO: 016_sprint5_whatsapp_and_leads.sql
 -- Migration 016: Sprint 5 - WhatsApp Oficial Híbrido, Bot de Orçamentos e Leads
 -- T5.1: Deduplicação de eventos (wa_events) e registro de opt-in/opt-out (wa_optins)
 -- T5.3: Tabelas de intermediação de pedidos de orçamento: leads e lead_offers
@@ -1458,7 +1469,7 @@ CREATE INDEX IF NOT EXISTS idx_lead_reviews_biz ON lead_reviews(business_id);
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('016_sprint5_whatsapp_and_leads.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 017_sprint7_business_network_and_endorsements.sql >>>
+-- >>> MIGRACAO: 017_sprint7_business_network_and_endorsements.sql
 -- ==============================================================================
 -- Migração 017: Sprint 7 - Rede de Negócios Confiáveis e Endosso Entre Pares
 -- Objetivo: Fortalecer a comunidade com indicações mútuas, disponibilidade imediata
@@ -1560,7 +1571,7 @@ FOR EACH ROW EXECUTE FUNCTION update_endorsements_count();
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('017_sprint7_business_network_and_endorsements.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 018_job_openings_module.sql >>>
+-- >>> MIGRACAO: 018_job_openings_module.sql
 -- ==============================================================================
 -- Migração 018: Módulo de Vagas de Emprego (v1)
 -- Objetivo: Permitir que empresas aprovadas sinalizem vagas abertas, com moderação
@@ -1748,7 +1759,7 @@ CREATE POLICY p_job_reports_app_all ON job_reports
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('018_job_openings_module.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> MIGRAÇÃO: 019_update_monthly_plan_price.sql >>>
+-- >>> MIGRACAO: 019_update_monthly_plan_price.sql
 -- ==============================================================================
 -- Migration 019: Update Monthly Plan Price
 -- Description: Ajusta o valor do plano mensal de R$ 15,00 para R$ 14,90 (1490 centavos).
@@ -1763,15 +1774,15 @@ WHERE id = 'mensal';
 
 INSERT INTO schema_migrations (version, checksum) VALUES ('019_update_monthly_plan_price.sql', 'manual_reset') ON CONFLICT DO NOTHING;
 
--- >>> SEED: categories.sql >>>
+-- >>> SEED: categories.sql
 -- ==============================================================================
--- Seed: Curated Categories
+-- Seed: Curated Categories (já aplicadas na migração 004_seed_categories.sql)
 -- ==============================================================================
-\i ../migrations/004_seed_categories.sql
+SELECT 1;
 
 
 
--- >>> SEED: sample_businesses_campinas.sql >>>
+-- >>> SEED: sample_businesses_campinas.sql
 -- ==============================================================================
 -- Seed: Sample Pilot Businesses (Campinas - SP)
 -- Description: Realistic seed data for testing proximity search,
@@ -1882,5 +1893,4 @@ INSERT INTO business_categories (business_id, category_id, is_primary)
 SELECT 'b0000000-0000-0000-0000-000000000004', id, true
 FROM categories WHERE slug = 'marcenaria'
 ON CONFLICT DO NOTHING;
-
 
