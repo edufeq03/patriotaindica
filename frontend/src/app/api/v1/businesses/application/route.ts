@@ -83,73 +83,16 @@ export async function POST(request: NextRequest) {
     if (data) {
       return NextResponse.json(data, { status: res.status });
     }
-  } catch {
-    // Backend offline / indisponível: segue para o fallback de validação e persistência local
-  }
 
-  // 2. Fallback de Contingência e Validação Local Robusta
-  const name = String(body.name || '').trim();
-  if (name.length < 2) {
     return NextResponse.json(
-      { detail: 'O Nome do Negócio é obrigatório e deve ter pelo menos 2 caracteres.' },
-      { status: 400 }
+      { detail: 'Resposta vazia ou inválida do servidor backend.' },
+      { status: res.status || 500 }
     );
+  } catch (err: unknown) {
+    const errorMsg =
+      err instanceof Error
+        ? err.message
+        : 'Não foi possível conectar ao backend. Verifique se o serviço está ativo.';
+    return NextResponse.json({ detail: errorMsg }, { status: 502 });
   }
-
-  const rawWhatsapp = String(body.whatsapp || '').replace(/\D/g, '');
-  if (rawWhatsapp.length < 10) {
-    return NextResponse.json(
-      { detail: 'WhatsApp de Atendimento inválido. Informe DDD + número com pelo menos 10 dígitos.' },
-      { status: 400 }
-    );
-  }
-
-  const city = String(body.city || '').trim();
-  const neighborhood = String(body.neighborhood || '').trim();
-  if (!city || !neighborhood) {
-    return NextResponse.json(
-      { detail: 'Cidade e Bairro são campos obrigatórios para localizar seu atendimento.' },
-      { status: 400 }
-    );
-  }
-
-  // Validação de Documento (CNPJ ou CPF) se informado
-  if (body.document_number) {
-    const docDigits = String(body.document_number).replace(/\D/g, '');
-    const docType = body.document_type || (docDigits.length > 11 ? 'CNPJ' : 'CPF');
-
-    if (docType === 'CPF' && !isValidCpf(docDigits)) {
-      return NextResponse.json(
-        { detail: 'O número de CPF informado possui dígitos verificadores inválidos.' },
-        { status: 400 }
-      );
-    }
-
-    if (docType === 'CNPJ' && !isValidCnpj(docDigits)) {
-      return NextResponse.json(
-        { detail: 'O número de CNPJ informado possui dígitos verificadores inválidos.' },
-        { status: 400 }
-      );
-    }
-  }
-
-  // Validação de Consentimentos LGPD
-  if (!body.consent_carta_principios || !body.consent_termos || !body.consent_privacidade) {
-    return NextResponse.json(
-      { detail: 'É obrigatório aceitar a Carta de Princípios, os Termos de Uso e a Política de Privacidade para cadastrar a empresa.' },
-      { status: 400 }
-    );
-  }
-
-  // Sucesso no processamento de contingência
-  const generatedId = `app-local-${Date.now()}`;
-  return NextResponse.json(
-    {
-      success: true,
-      message: 'Candidatura recebida com sucesso! Em ambiente de homologação, sua empresa foi submetida e aguarda triagem da curadoria.',
-      business_id: generatedId,
-      status: 'pending_review',
-    },
-    { status: 201 }
-  );
 }

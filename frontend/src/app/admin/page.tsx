@@ -186,64 +186,82 @@ export default function AdminDashboardPage() {
   );
   const [isLoadingQueue, setIsLoadingQueue] = useState(false);
 
+  const [queueError, setQueueError] = useState<string | null>(null);
+
   // Sincronizar Fila de Triagem com o Banco de Dados PostgreSQL
   const fetchTriageQueue = async () => {
     if (!authSession?.token) return;
     setIsLoadingQueue(true);
+    setQueueError(null);
     try {
       const res = await fetch('/api/v1/triage/queue?limit=100', {
         headers: {
           Authorization: `Bearer ${authSession.token}`,
         },
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.results && Array.isArray(data.results) && data.results.length > 0) {
-          const backendBusinesses: Business[] = data.results.map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            slug: item.slug,
-            description: item.description || '',
-            listing_type: item.listing_type || 'service',
-            service_mode: item.service_mode || 'at_customer',
-            serves_at_location: item.serves_at_location ?? (item.service_mode === 'at_location' || item.service_mode === 'both'),
-            serves_at_customer: item.serves_at_customer ?? (item.service_mode === 'at_customer' || item.service_mode === 'both'),
-            serves_online: item.serves_online ?? (item.service_mode === 'online'),
-            service_radius_km: item.service_radius_km || 20,
-            category_name: item.primary_category || 'Serviços',
-            category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
-            whatsapp: item.whatsapp,
-            phone: item.phone || '',
-            website: item.website || '',
-            instagram: item.instagram || '',
-            street: item.street || '',
-            number: item.number || '',
-            neighborhood: item.neighborhood,
-            city: item.city,
-            state: item.state,
-            postal_code: item.postal_code || '',
-            show_full_address: !!item.show_full_address,
-            cnpj_situation: item.cnpj_situation || '',
-            latitude: -22.9064,
-            longitude: -47.0592,
-            status: item.status,
-            is_verified: !!item.is_verified,
-            document_type: item.document_type || 'CNPJ',
-            document_number: item.document_number,
-            created_at: item.created_at,
-            accepted_manifesto: true,
-          }));
 
-          setBusinesses(backendBusinesses);
-          setSelectedBusiness((prev) => {
-            if (prev && backendBusinesses.some(b => b.id === prev.id)) {
-              return backendBusinesses.find(b => b.id === prev.id) || backendBusinesses[0];
-            }
-            return backendBusinesses.find(b => b.status === 'pending_review') || backendBusinesses[0];
-          });
-        }
+      if (res.status === 401 || res.status === 403) {
+        setQueueError('Sessão de administrador expirada ou não autorizada no backend. Faça login novamente.');
+        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        sessionStorage.removeItem('patriotaindica_admin_session');
+        setAuthSession(null);
+        return;
       }
-    } catch (err) {
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        setQueueError(errData?.detail || `Falha ao carregar fila de triagem (HTTP ${res.status}).`);
+        return;
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.results)) {
+        const backendBusinesses: Business[] = data.results.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          slug: item.slug,
+          description: item.description || '',
+          listing_type: item.listing_type || 'service',
+          service_mode: item.service_mode || 'at_customer',
+          serves_at_location: item.serves_at_location ?? (item.service_mode === 'at_location' || item.service_mode === 'both'),
+          serves_at_customer: item.serves_at_customer ?? (item.service_mode === 'at_customer' || item.service_mode === 'both'),
+          serves_online: item.serves_online ?? (item.service_mode === 'online'),
+          service_radius_km: item.service_radius_km || 20,
+          category_name: item.primary_category || 'Serviços',
+          category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
+          whatsapp: item.whatsapp,
+          phone: item.phone || '',
+          website: item.website || '',
+          instagram: item.instagram || '',
+          street: item.street || '',
+          number: item.number || '',
+          neighborhood: item.neighborhood,
+          city: item.city,
+          state: item.state,
+          postal_code: item.postal_code || '',
+          show_full_address: !!item.show_full_address,
+          cnpj_situation: item.cnpj_situation || '',
+          latitude: -22.9064,
+          longitude: -47.0592,
+          status: item.status,
+          is_verified: !!item.is_verified,
+          document_type: item.document_type || 'CNPJ',
+          document_number: item.document_number,
+          created_at: item.created_at,
+          accepted_manifesto: true,
+        }));
+
+        setBusinesses(backendBusinesses);
+        setSelectedBusiness((prev) => {
+          if (prev && backendBusinesses.some(b => b.id === prev.id)) {
+            return backendBusinesses.find(b => b.id === prev.id) || backendBusinesses[0] || null;
+          }
+          return backendBusinesses.find(b => b.status === 'pending_review') || backendBusinesses[0] || null;
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha na conexão com o servidor de triagem.';
+      setQueueError(msg);
       console.warn('Erro ao sincronizar fila de triagem:', err);
     } finally {
       setIsLoadingQueue(false);
@@ -899,6 +917,16 @@ export default function AdminDashboardPage() {
                     </span>
                   </div>
                 </div>
+
+                {queueError && (
+                  <div className="p-3 bg-red-950/60 border border-red-800/80 rounded-xl text-xs text-red-300 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-red-200">Falha ao sincronizar com o banco:</p>
+                      <p className="text-[11px] text-red-300/90 mt-0.5">{queueError}</p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Filtro de Busca e Status */}
                 <div className="space-y-2">
