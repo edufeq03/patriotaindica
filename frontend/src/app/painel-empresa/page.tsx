@@ -295,6 +295,17 @@ function BusinessDashboardContent() {
           Authorization: `Bearer ${token}`,
         },
       });
+      if (res.status === 401 || res.status === 403) {
+        // Sessão inválida ou usuário inexistente no banco: força novo login em vez de exibir empresa demo
+        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+        sessionStorage.removeItem('patriotaindica_owner_session');
+        setSession(null);
+        setBusinesses([]);
+        setOtpSent(false);
+        setOtpCode('');
+        setAuthError('Sua sessão expirou ou é inválida. Faça login novamente.');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -380,14 +391,14 @@ function BusinessDashboardContent() {
         return;
       }
 
-      // Se falhar ou for ambiente local de desenvolvimento, avança com código demo
-      setOtpSent(true);
-      setOtpMaskedPhone(whatsappPhone);
+      const data = await res.json().catch(() => null);
+      setAuthError(
+        (typeof data?.detail === 'string' && data.detail) ||
+          'Não foi possível enviar o código. Tente novamente em instantes.'
+      );
       setAuthLoading(false);
     } catch {
-      // Backend inacessível: avança para a tela de confirmação
-      setOtpSent(true);
-      setOtpMaskedPhone(whatsappPhone);
+      setAuthError('Não foi possível conectar ao servidor. Tente novamente.');
       setAuthLoading(false);
     }
   };
@@ -427,35 +438,17 @@ function BusinessDashboardContent() {
         setAuthLoading(false);
         return;
       }
+
+      // Exibe a mensagem real do backend (código incorreto, expirado, número sem empresa etc.)
+      const errData = await res.json().catch(() => null);
+      setAuthError(
+        (typeof errData?.detail === 'string' && errData.detail) ||
+          'Código de confirmação inválido ou expirado.'
+      );
     } catch {
-      // Backend offline: segue para fallback
+      setAuthError('Não foi possível conectar ao servidor. Tente novamente.');
     }
 
-    // Fallback de demonstração / contingência se o código digitado for 123456 ou qualquer código válido em dev
-    if (otpCode.trim() === '123456' || otpCode.trim().length === 6) {
-      const cleanPhone = whatsappPhone.replace(/\D/g, '') || 'parceira';
-      const loginRes = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: `empresa-${cleanPhone}@patriotaindica.internal`,
-          password: '123456',
-        }),
-      });
-      const data = await loginRes.json().catch(() => null);
-      if (loginRes.ok && data?.success) {
-        const newSession = {
-          token: 'cookie_session',
-          user: data.user,
-        };
-        sessionStorage.setItem('patriotaindica_owner_session', JSON.stringify(newSession));
-        setSession(newSession);
-        setAuthLoading(false);
-        return;
-      }
-    }
-
-    setAuthError('Código de confirmação inválido ou expirado.');
     setAuthLoading(false);
   };
 

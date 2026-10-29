@@ -91,10 +91,16 @@ async def request_otp_by_phone(
         primary_biz = matching_businesses[0]
         biz_name = getattr(primary_biz, "name", None) or (primary_biz[1] if isinstance(primary_biz, (tuple, list)) and len(primary_biz) > 1 else "Patriota Indica")
         try:
-            await otp_service.request_otp_by_e164(
+            sent_ok, send_msg = await otp_service.request_otp_by_e164(
                 phone_e164=phone_e164,
                 business_name=biz_name,
             )
+            if not sent_ok:
+                logger.error(
+                    "OTP não enviado para %s: %s",
+                    otp_service.mask_phone(phone_e164),
+                    send_msg,
+                )
         except Exception as e:
             logger.error("Falha no envio do WhatsApp OTP: %s", e)
             # Não expõe detalhe interno do provedor
@@ -102,6 +108,11 @@ async def request_otp_by_phone(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Não foi possível enviar o código via WhatsApp no momento. Tente novamente mais tarde.",
             )
+    else:
+        logger.warning(
+            "Solicitação de OTP para número sem empresa vinculada: %s",
+            otp_service.mask_phone(phone_e164),
+        )
 
     # Resposta SEMPRE genérica para evitar enumeração e vazamento de dados de empresas cadastradas
     return {

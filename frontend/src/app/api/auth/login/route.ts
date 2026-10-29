@@ -97,29 +97,8 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    // Login de empresário no painel da empresa
-    const isOwnerMatch =
-      (cleanUsername.includes('@') &&
-        (cleanPassword === 'demo123' ||
-          cleanPassword === 'admin123' ||
-          cleanPassword === '123456')) ||
-      cleanUsername === 'empresa@patriotaindica.com.br';
-
-    if (isOwnerMatch) {
-      const ownerUser: AuthUserPayload = {
-        id: '00000000-0000-0000-0000-000000000002',
-        name: 'Empresário Parceiro',
-        email: cleanUsername,
-        role: 'owner',
-      };
-      const { accessToken, refreshToken } = await createLocalSessionTokens(ownerUser);
-      const response = NextResponse.json({
-        success: true,
-        user: ownerUser,
-      });
-      setAuthCookies(response, accessToken, refreshToken, 'owner');
-      return response;
-    }
+    // Empresários autenticam exclusivamente pelo backend (OTP WhatsApp ou e-mail/senha reais).
+    // Não há fallback local: um token para usuário inexistente no banco resulta em 401 no backend.
 
     return NextResponse.json(
       { detail: backendErrorDetail || 'Credenciais inválidas. Verifique seu e-mail e senha.' },
