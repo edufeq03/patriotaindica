@@ -73,16 +73,40 @@ async def login(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
-    # Timing attack mitigation (H8): sempre roda o algoritmo bcrypt
-    if user is None:
-        verify_password(form_data.password, DUMMY_BCRYPT_HASH)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciais incorretas (e-mail ou senha inválidos).",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Suporte a credenciais de admin configuradas via variáveis de ambiente (.env)
+    env_admin_email = getattr(settings, "ADMIN_EMAIL", None)
+    env_admin_pass = getattr(settings, "ADMIN_PASSWORD", None)
+    is_env_admin_match = (
+        bool(env_admin_email)
+        and bool(env_admin_pass)
+        and email_clean == env_admin_email.strip().lower()
+        and form_data.password == env_admin_pass
+    )
 
-    if not verify_password(form_data.password, user.password_hash):
+    if user is None:
+        if is_env_admin_match:
+            import uuid
+            user = User(
+                id=uuid.uuid4(),
+                name="Administrador Curador",
+                email=email_clean,
+                role="admin",
+                password_hash=get_password_hash(env_admin_pass),
+                is_active=True,
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        else:
+            # Timing attack mitigation (H8): sempre roda o algoritmo bcrypt
+            verify_password(form_data.password, DUMMY_BCRYPT_HASH)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciais incorretas (e-mail ou senha inválidos).",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    if not is_env_admin_match and not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais incorretas (e-mail ou senha inválidos).",

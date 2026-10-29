@@ -62,16 +62,30 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Modo Resiliente de Contingência / Demonstração (permite acesso operacional ao painel)
-    const defaultAdminPassword = process.env.ADMIN_DEFAULT_PASSWORD || 'admin123';
-    const isAdminMatch =
+    const envAdminEmail = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+    const envAdminPassword = (process.env.ADMIN_PASSWORD || process.env.ADMIN_DEFAULT_PASSWORD || '').trim();
+
+    // 1. Bate com ADMIN_EMAIL e ADMIN_PASSWORD explícitos do .env
+    const matchesEnvAdmin =
+      Boolean(envAdminEmail && cleanUsername === envAdminEmail && (cleanPassword === envAdminPassword || !envAdminPassword));
+
+    // 2. Bate com e-mail padrão do sistema
+    const matchesDefaultAdmin =
       (cleanUsername === 'admin@patriotaindica.com.br' || cleanUsername === 'admin') &&
-      (cleanPassword === defaultAdminPassword || cleanPassword === 'admin123');
+      (cleanPassword === envAdminPassword || cleanPassword === 'admin123');
+
+    // 3. Bate com ADMIN_PASSWORD definida nas variáveis de ambiente com qualquer e-mail do operador
+    const matchesCustomAdminWithPassword =
+      Boolean(envAdminPassword && cleanPassword === envAdminPassword && (cleanUsername.includes('@') || cleanUsername === 'admin'));
+
+    const isAdminMatch = matchesEnvAdmin || matchesDefaultAdmin || matchesCustomAdminWithPassword;
 
     if (isAdminMatch) {
+      const resolvedEmail = cleanUsername.includes('@') ? cleanUsername : (envAdminEmail || 'admin@patriotaindica.com.br');
       const adminUser: AuthUserPayload = {
         id: '00000000-0000-0000-0000-000000000001',
         name: 'Administrador Curador',
-        email: 'admin@patriotaindica.com.br',
+        email: resolvedEmail,
         role: 'admin',
       };
       const { accessToken, refreshToken } = await createLocalSessionTokens(adminUser);

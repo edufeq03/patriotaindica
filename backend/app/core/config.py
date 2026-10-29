@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     TRUSTED_PROXY_HOPS: int = 1
 
+    # Admin Credentials via Environment Variables (Provisionamento via .env)
+    ADMIN_EMAIL: Optional[str] = None
+    ADMIN_PASSWORD: Optional[str] = None
+
     # External APIs
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"

@@ -457,7 +457,10 @@ export default function HomePage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        let msg = 'Erro ao cadastrar empresa. Verifique os dados informados.';
+        let msg = res.status >= 500
+          ? 'O servidor de banco de dados está temporariamente inacessível. Verifique se o backend está ativo ou tente novamente em instantes.'
+          : 'Erro ao cadastrar empresa. Verifique os dados informados.';
+
         if (data?.detail) {
           if (typeof data.detail === 'string') {
             msg = data.detail;
@@ -490,6 +493,8 @@ export default function HomePage() {
               })
               .join(' | ');
           }
+        } else if (data?.message) {
+          msg = data.message;
         }
         setApplicationErrorMsg(msg);
         setApplicationSubmitting(false);
