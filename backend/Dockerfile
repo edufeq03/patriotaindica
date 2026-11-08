@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd -g 10001 appuser && \
     useradd -u 10001 -g appuser -s /sbin/nologin -d /app -M appuser
 
-# Funciona tanto com contexto / quanto com contexto /backend
-COPY requirements.txt* backend/requirements.txt* ./
-RUN pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r backend/requirements.txt
+# Copia e instala requirements a partir do contexto atual
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia arquivos da aplicacao
+# Copia o restante dos arquivos
 COPY . /app/
 
 # Ajuste de estrutura para que o PYTHONPATH encontre backend.app e database
