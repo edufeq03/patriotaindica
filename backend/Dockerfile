@@ -22,6 +22,7 @@ COPY database/ /app/database/
 
 # Garantir diretorio static para uploads e ajustar permissoes
 RUN mkdir -p /app/static/uploads /app/backend/static/uploads && \
+    chmod +x /app/backend/entrypoint.sh && \
     chown -R appuser:appuser /app
 
 ENV PYTHONPATH=/app
@@ -33,4 +34,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
     CMD curl -f http://127.0.0.1:8000/health || exit 1
 
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/backend/entrypoint.sh"]
