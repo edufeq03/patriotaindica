@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { SignJWT, jwtVerify } from 'jose';
 
-export const JWT_SECRET =
-  process.env.JWT_SECRET_KEY ||
-  'f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782';
+export const JWT_SECRET = process.env.JWT_SECRET_KEY || '';
 
-export const secretKey = new TextEncoder().encode(JWT_SECRET);
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET_KEY não definida nas variáveis de ambiente do Frontend.');
+}
+
+export const secretKey = new TextEncoder().encode(JWT_SECRET || 'dev_insecure_key_for_build_only_32_chars_min');
 
 export interface AuthUserPayload {
   id: string;

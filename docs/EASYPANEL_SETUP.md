@@ -137,3 +137,4 @@ Caso adicione uma nova migration em `database/migrations`:
 ### D. Visualização de Logs
 - **Logs do Frontend:** Exibe requisições SSR, páginas acessadas e eventuais proxies do Next.js.
 - **Logs do Backend:** Exibe rotas FastAPI acessadas, erros HTTP e conexões com o Postgres/Redis.
+

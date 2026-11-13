@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS job_reports (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_job_report_daily
-    ON job_reports (job_id, ip_hash, (created_at::date));
+    ON job_reports (job_id, ip_hash, ((created_at AT TIME ZONE 'UTC')::date));
 
 -- 6. Termos de Moderação de Conteúdo
 CREATE TABLE IF NOT EXISTS moderation_terms (

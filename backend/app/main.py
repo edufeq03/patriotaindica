@@ -7,6 +7,7 @@ from backend.app.api.v1.api import api_router
 from backend.app.core.config import settings
 
 from contextlib import asynccontextmanager
+from backend.app.core.bootstrap import ensure_admin
 from backend.app.core.redis_client import close_redis_pool, init_redis_pool
 
 logger = logging.getLogger("patriotaindica")
@@ -19,6 +20,8 @@ is_prod = (settings.ENVIRONMENT == "production" and not settings.DEBUG)
 async def lifespan(app: FastAPI):
     # Startup: inicializa pool persistente do Redis
     await init_redis_pool()
+    # Startup: garante existencia e papel do admin no banco (A1 / S0)
+    await ensure_admin()
     yield
     # Shutdown: encerra conexões
     await close_redis_pool()

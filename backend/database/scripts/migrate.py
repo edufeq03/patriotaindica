@@ -127,15 +127,18 @@ def main():
 
     args = parser.parse_args()
 
-    db_url = args.database_url
+    db_url = args.database_url or os.environ.get("DATABASE_URL")
     if not db_url:
-        env_file = BASE_DIR / "backend" / ".env"
-        if env_file.exists():
-            with open(env_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip().startswith("DATABASE_URL="):
-                        db_url = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
-                        break
+        env_files = [BASE_DIR / ".env", BASE_DIR / "backend" / ".env"]
+        for env_file in env_files:
+            if env_file.exists():
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("DATABASE_URL="):
+                            db_url = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                            break
+            if db_url:
+                break
 
     if not db_url:
         db_url = "postgresql://postgres:postgres@localhost:5432/patriotaindica"

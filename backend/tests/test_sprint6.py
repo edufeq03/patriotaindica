@@ -32,22 +32,13 @@ async def test_t6_1_runner_detects_drift_in_applied_migrations():
     """T6.1: Runner reporta erro caso um arquivo aplicado tenha sido alterado no disco."""
     mock_db_url = "postgresql+asyncpg://user:pass@localhost:5432/fake_db"
 
-    # Simula migração com checksum gravado divergente do disco
-    with patch("database.scripts.migrate.create_async_engine") as mock_engine:
-        mock_session = AsyncMock()
-        mock_applied_res = MagicMock()
-        # Simula que 001_initial_schema.sql tem hash diferente no banco
-        mock_applied_res.fetchall.return_value = [("001_initial_schema.sql", "tampered_hash_12345")]
-        mock_session.execute.return_value = mock_applied_res
+    mock_conn = AsyncMock()
+    mock_conn.fetch.return_value = [{"version": "001_initial_schema.sql", "checksum": "tampered_hash_12345"}]
+    mock_conn.execute.return_value = None
 
-        mock_session_factory = MagicMock()
-        mock_session_factory.return_value.__aenter__.return_value = mock_session
-        mock_session_factory.return_value.__aexit__.return_value = None
-
-        with patch("database.scripts.migrate.async_sessionmaker", return_value=mock_session_factory):
-            exit_code = await run_migrations(database_url=mock_db_url, check_drift_only=True, verbose=False)
-            # Deve detectar drift e retornar código de erro 1
-            assert exit_code == 1
+    with patch("database.scripts.migrate.asyncpg.connect", AsyncMock(return_value=mock_conn)):
+        exit_code = await run_migrations(database_url=mock_db_url, check_drift_only=True, verbose=False)
+        assert exit_code == 1
 
 
 def test_t6_2_safe_dtos_do_not_leak_internal_orm_fields():

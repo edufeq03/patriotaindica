@@ -1,0 +1,547 @@
+================================================================================
+PATRIOTA INDICA - AUDITORIA DE DADOS, LOGIN/CADASTRO E PLANO DE SIMPLIFICAÇÃO
+Base: patriotaindica-main_90fbab.zip (20 migrations, backend FastAPI, frontend Next)
+================================================================================
+
+Como usar: cole este documento inteiro na outra IA de código. A PARTE A traz as
+respostas diretas e as evidências. A PARTE B é a auditoria de dados. A PARTE C é
+o plano em sprints. A PARTE D é o prompt mestre.
+
+--------------------------------------------------------------------------------
+PARTE A - RESPOSTAS DIRETAS
+--------------------------------------------------------------------------------
+
+A1. "Admin por variável de ambiente e o resto no banco: o que acha?"
+  Boa ideia, com 3 ajustes. Hoje o backend já faz algo parecido, mas de um jeito
+  que tem falha reproduzida (testei):
+   - Se alguém se registra em /auth/register com o MESMO e-mail do admin ANTES do
+     primeiro login do admin, a conta fica de role "user". O login com a senha do
+     .env passa a entrar como "user" (o admin real fica sem painel) e a senha do
+     invasor também funciona. Ou seja, o admin pode ser trancado para fora.
+   - A senha do .env é comparada no meio do login (não em tempo constante) e o
+     usuário admin é criado DENTRO do login.
+   - O frontend tem um segundo caminho de login de admin (contingência) que não
+     passa pelo banco.
+  Desenho recomendado:
+   1. Variáveis ADMIN_EMAIL e ADMIN_PASSWORD (mínimo 12 caracteres; recusar
+      "admin123" e similares).
+   2. Na INICIALIZAÇÃO do backend (lifespan), um "upsert": cria ou atualiza a
+      linha do admin no banco (role admin, senha com bcrypt, ativo). Se já
+      existir um usuário comum com esse e-mail, ele é promovido e a senha é
+      sobrescrita pela do .env. Isso neutraliza o pré-cadastro.
+   3. O login SEMPRE confere só contra o hash do banco. Nenhuma comparação com
+      variável de ambiente no login, nenhuma lógica de admin no frontend.
+   4. Trocar a senha = mudar a variável e reiniciar.
+  Por que o admin precisa existir como LINHA no banco: tabelas guardam
+  reviewed_by/admin_id apontando para users (auditoria). Sem a linha, a
+  auditoria quebra.
+  Snippet:
+      async def ensure_admin(db):
+          email = settings.ADMIN_EMAIL.strip().lower()
+          pwd = settings.ADMIN_PASSWORD
+          if not email or not pwd:
+              return
+          if len(pwd) < 12 or pwd.lower() in {"admin123","senha123","password"}:
+              raise RuntimeError("ADMIN_PASSWORD fraca")
+          u = (await db.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
+          h = get_password_hash(pwd)
+          if u is None:
+              db.add(User(email=email, name="Administrador", role="admin",
+                          password_hash=h, is_active=True))
+          else:
+              u.role, u.password_hash, u.is_active = "admin", h, True
+          await db.commit()
+
+A2. "O projeto está complexo demais?"
+  Sim, e os números mostram: 20 migrations, 29 tabelas, a tabela businesses com
+  50 colunas, 3 formas de identidade (admin, owner por OTP, user por registro),
+  4 mecanismos de esquema (migrations SQL, reset_all.sql, runner migrate.py e uma
+  pasta alembic sem versões) e módulos que não fazem parte da ideia original
+  (planos/pagamentos, bot de leads no WhatsApp, rede de indicações, lista de
+  espera por cidade). A ideia original (vitrine + vagas) cabe em umas 12 tabelas.
+  A PARTE C propõe congelar o que não é núcleo (sem apagar dados) e simplificar o
+  cadastro.
+
+A3. "Por que login e criar empresa dão tanto trabalho?" (causa raiz)
+  1. Criar empresa e ter conta são coisas SEPARADAS. A candidatura é anônima: o
+     negócio nasce com owner_user_id = NULL (confirmei no banco). Para entrar, o
+     empresário precisa depois "reivindicar" pelo código do WhatsApp.
+  2. Esse código depende de um provedor de WhatsApp (Evolution/Meta). Sem as
+     credenciais, o sistema cai no provedor "Console", que só escreve no log:
+     ninguém recebe nada e ninguém consegue entrar.
+  3. O código OTP e os limites ficam na MEMÓRIA do processo (dicionário em
+     otp.py): somem a cada reinício e quebram com mais de 1 worker.
+  4. O dono "reivindicado" vira um usuário sintético
+     (owner-xxxx@patriotaindica.internal) sem e-mail real nem senha: não há
+     recuperação de acesso nem aviso por e-mail.
+  5. Existe /auth/register, que cria um usuário "user" sem nenhuma função no
+     sistema (não consegue criar nem possuir empresa).
+  6. O frontend MASCARA falhas: se o backend estiver fora do ar, a rota
+     /api/v1/businesses/application responde 201 "Candidatura recebida" com id
+     falso (app-local-...) e NÃO grava nada. O login também tem um modo de
+     contingência. Parece que funciona, mas nada foi salvo.
+  7. Se a lista de categorias da API falhar, o formulário usa 28 categorias de
+     exemplo com ids falsos (c1..c28) e envia o nome como "nicho proposto",
+     poluindo as categorias com duplicatas.
+  8. A migration 018 falha num PostgreSQL real (ver D1): quem usa o runner oficial
+     fica sem as tabelas de vagas e sem as migrations 019 e 020.
+
+A4. Como testei (para você confiar nas evidências)
+  - PostgreSQL 16 + PostGIS 3.4 reais: apliquei as 20 migrations em ordem.
+  - Comparei os modelos SQLAlchemy com o esquema real do banco.
+  - Subi o backend com Redis e testei: login do admin por variável de ambiente,
+    pré-cadastro do e-mail do admin, candidatura de empresa e pedido de OTP.
+  - Rodei o runner oficial (database/scripts/migrate.py) num banco novo.
+  - Rodei os testes: 114 passam, 1 falha (test_t6_1_runner_detects_drift_in_
+    applied_migrations).
+  - Rodei tsc no frontend (sem erros).
+  - O que NÃO testei: geocodificação e envio de WhatsApp reais (sem rede), build
+    de produção do Next, carga.
+
+--------------------------------------------------------------------------------
+PARTE B - AUDITORIA DE DADOS
+--------------------------------------------------------------------------------
+
+B1. ONDE CADA INFORMAÇÃO É GUARDADA
+  Banco (PostgreSQL)  : usuários, empresas, categorias, cidades, vagas, planos,
+                        assinaturas, pagamentos, leads, consentimentos,
+                        denúncias, logs de auditoria, eventos de clique.
+  Redis               : limites de requisição e tokens de refresh (sessão).
+  MEMÓRIA do backend  : códigos OTP e limites do OTP (otp.py)  <- risco (A3.3)
+  Disco do container  : imagens enviadas em /static/uploads. O docker-compose
+                        NÃO tem volume para isso: as imagens somem a cada
+                        deploy/recriação do container.
+  Navegador           : cookie/sessão de login, cópia local das categorias
+                        (localStorage guia_local_categories, que fica velha) e
+                        dados de apresentação da sessão do admin (sessionStorage).
+  Logs                : mensagens de erro/diagnóstico (conferir se não há PII).
+
+B2. MAPA DE ENTIDADES E RELAÇÕES (como está hoje)
+  users (admin | owner | user)
+    1 --- N businesses            (businesses.owner_user_id, ON DELETE SET NULL)
+    1 --- N subscriptions         (owner_user_id, CASCADE)
+    1 --- N payments              (user_id, CASCADE)
+    1 --- N consents, referrals, invitations, reports(resolved_by) ...
+  businesses (vitrine)
+    N --- N categories            via business_categories (CASCADE/RESTRICT)
+    1 --- N job_openings          (CASCADE)  -> job_reports, job_review_log
+    1 --- N business_review_log   (CASCADE)  <- apaga a auditoria junto
+    1 --- N business_pending_changes, contact_events, invitations, reports,
+            consents, lead_offers, lead_reviews, peer_endorsements, referrals
+    N --- 1 cities?               NÃO há FK: businesses.city/state são TEXTO LIVRE
+  plans 1 --- N subscriptions / payments (sem ON DELETE: NO ACTION)
+  leads 1 --- N lead_offers / lead_reviews (CASCADE)
+  Observação: as relações centrais (user -> business -> categorias/vagas) estão
+  corretas. Os problemas estão nas bordas (integridade, exclusão, texto livre).
+
+B3. ACHADOS (severidade: C crítico, A alto, M médio, B baixo)
+
+[D1] (C) Migration 018 não executa num PostgreSQL real
+  Erro: "functions in index expression must be marked IMMUTABLE" no índice
+  uq_job_report_daily (usa created_at::date, que depende do fuso).
+  Efeito: o runner oficial (migrate.py) executa cada arquivo como uma unidade e
+  PARA no erro: as tabelas job_* não são criadas e as migrations 019 e 020 ficam
+  sem aplicar. Já pelo caminho do Docker (psql em docker-entrypoint-initdb.d) o
+  restante da 018 passa e só o índice de deduplicação de denúncias fica faltando.
+  Dois caminhos, dois resultados diferentes. A busca da home tolera a ausência
+  das vagas (registra "Falha ao buscar vagas" e segue), mas o módulo de vagas
+  não funciona.
+  Correção: editar a 018 trocando o índice por
+      CREATE UNIQUE INDEX uq_job_report_daily
+        ON job_reports (job_id, ip_hash, ((created_at AT TIME ZONE 'UTC')::date));
+  (a 018 nunca foi aplicada com sucesso pelo runner, então pode ser editada no
+  repositório; manter também um CREATE ... IF NOT EXISTS na 021 para bancos
+  criados via Docker). Adicionar ao CI um teste que sobe PostgreSQL+PostGIS e
+  aplica TODAS as migrations do zero.
+
+[D2] (A) Dois sistemas de migração concorrentes + script de reset perigoso
+  - Docker aplica migrations só na PRIMEIRA criação do banco (initdb), com psql
+    que continua após erros; migrate.py aplica com controle de versão e para no
+    erro; database/scripts/reset_all.sql (gerado) faz DROP SCHEMA e registra tudo
+    como 'manual_reset' (checksum falso, que explica o teste de drift falhando);
+    existe ainda uma pasta alembic sem nenhuma versão.
+  - migrate.py lê DATABASE_URL só de backend/.env e ignora a variável de
+    ambiente (no Docker/Easypanel ele não acha o banco, a menos que use
+    --database-url).
+  Correção: UM único caminho. Serviço "migrate" de execução única no compose
+  (roda migrate.py com a URL do ambiente e termina) antes do backend; remover
+  alembic/ e o uso de initdb para migrations; mover reset_all.sql para
+  scripts/dev (sem estar no pacote de produção) com confirmação interativa.
+
+[D3] (A) Colunas NOT NULL no ORM aceitam NULL no banco (órfãos possíveis)
+  business_review_log.business_id, contact_events.business_id,
+  invitations.business_id, lead_offers.lead_id/business_id,
+  lead_reviews.lead_id/business_id, leads.urgency, payments.user_id/plan_id,
+  referrals.referred_business_id, reports.business_id,
+  subscriptions.owner_user_id/plan_id, wa_optins.origin.
+  Inverso: subscriptions.current_period_start é NOT NULL no banco e opcional no
+  ORM. Coluna só no banco: contact_events.job_id (sem campo no modelo).
+  Correção: decidir para cada uma (obrigatória ou opcional), limpar órfãos
+  (backup antes), aplicar NOT NULL e alinhar o ORM (migration 021, abaixo).
+
+[D4] (A) Política de exclusão apaga auditoria e histórico financeiro
+  - business_review_log e job_review_log: ON DELETE CASCADE. Apagar uma empresa
+    apaga a trilha de decisões (o oposto de auditoria).
+  - payments.user_id e subscriptions.owner_user_id: CASCADE. Apagar o usuário
+    apaga o histórico financeiro (há obrigação de guarda fiscal).
+  - businesses.owner_user_id: SET NULL. Apagar o usuário deixa empresas públicas
+    sem dono.
+  Correção: nunca apagar de verdade. Exclusão lógica (deleted_at) + anonimização
+  (D5); FKs de auditoria e financeiro como RESTRICT.
+
+[D5] (A) Direito de exclusão (LGPD) não é executado
+  O canal do titular registra o pedido (tabela data_subject_requests), mas o
+  código só atualiza consentimentos: nenhum dado de empresa/usuário é anonimizado
+  ou removido. Pedido de exclusão fica "pendente" para sempre.
+  Correção: função de anonimização (nome/e-mail/telefone/CPF/descrição/logos
+  viram valores neutros, empresa sai da vitrine, vagas encerradas, consentimentos
+  revogados, histórico financeiro e auditoria preservados sem dado pessoal) e
+  endpoint/ação do admin para executá-la, registrando no log.
+
+[D6] (M) Status e papéis como texto livre (14 colunas sem CHECK/enum)
+  users.role, subscriptions.status, payments.status, leads.status,
+  lead_offers.status, lead_reviews.status, referrals.status, reports.status,
+  categories.status, cities.status, wa_optins.status,
+  data_subject_requests.status, business_pending_changes.status e
+  contact_events.event_type aceitam qualquer texto (um erro de digitação vira
+  um papel/status inválido). Já businesses.status, listing_type, service_mode e
+  source são ENUM, e job_openings tem CHECK: o padrão é misto.
+  Correção: um padrão só (VARCHAR + CHECK é o mais simples de evoluir). Levantar
+  os valores realmente usados no código antes de criar cada CHECK.
+
+[D7] (M) Lacunas de unicidade
+  - Nenhuma regra impede duas contas com e-mails que diferem só em maiúsculas
+    (a aplicação normaliza, o banco não garante).
+  - subscriptions: nada impede duas assinaturas ativas para o mesmo dono.
+  - businesses: o documento (CNPJ/CPF) deixou de ser único (necessário para donos
+    com várias empresas), e não há regra alternativa: o mesmo WhatsApp+nome pode
+    ser cadastrado várias vezes.
+  - referrals e consents sem unicidade por (indicada) e (empresa, tipo, versão).
+  Correção: índices únicos parciais (migration 021).
+
+[D8] (M) 21 chaves estrangeiras sem índice
+  business_pending_changes(proposed_by_user_id, reviewed_by),
+  business_review_log(admin_id), businesses(reviewed_by),
+  categories(proposed_by_business_id), category_aliases(category_id),
+  contact_events(job_id), invitations(created_by, used_by_user_id),
+  job_openings(created_by), job_reports(job_id), lead_reviews(lead_id),
+  leads(matched_business_id), payments(business_id, plan_id),
+  referrals(referred_business_id, referred_user_id, referrer_business_id),
+  reports(resolved_by), subscriptions(business_id, plan_id).
+  Efeito: junções e CASCADE lentos conforme a base cresce.
+
+[D9] (M) Cidade e telefone com mais de uma fonte de verdade
+  - Existe a tabela cities (com slug e status), mas businesses.city/state são
+    texto digitado e a busca filtra por ILIKE '%texto%': "Campinas", "campinas",
+    "Campinas - SP" viram cidades diferentes, e "São Paulo" casa com qualquer
+    nome que contenha "São Paulo".
+  - Telefone: businesses.whatsapp (como digitado) e businesses.whatsapp_e164
+    (normalizado), além de users.phone.
+  Correção: businesses.city_id (FK para cities) preenchido por seleção na lista
+  (nunca digitado); manter só o telefone normalizado em E.164 para lógica e o
+  formatado só para exibição.
+
+[D10] (M) Modelo de empresa largo demais (50 colunas) com estado espalhado
+  O "estado" da empresa está em status + owner_paused + location_pending +
+  document_flag_duplicate + is_verified + geocode_source + e na tabela
+  business_pending_changes. Isso explica boa parte da dificuldade de entender o
+  que aparece ou não na vitrine.
+  Correção: documentar uma regra única de visibilidade ("aparece se
+  status='approved' AND NOT owner_paused AND deleted_at IS NULL") e mover
+  colunas de operação (geocode, flags de triagem) para uma tabela
+  business_ops (1:1) quando sobrar tempo.
+
+[D11] (M) Assinatura por usuário, não por empresa
+  subscriptions.owner_user_id é obrigatória e business_id é opcional: não está
+  claro se o plano vale para o dono (todas as empresas) ou para uma empresa. A
+  busca já usa o plano da empresa (prioridade/selo). Definir e aplicar uma regra
+  (recomendado: plano POR EMPRESA). Como monetização será congelada (Parte C), é
+  só registrar a decisão.
+
+[D12] (M) Documento pessoal em texto puro
+  CPF/CNPJ ficam em businesses.document_number sem proteção. CPF é dado pessoal.
+  Correção: manter só para o admin (já não sai na API pública), nunca em logs;
+  avaliar criptografia de coluna (pgcrypto) ou guardar só o CNPJ e, para autônomo,
+  os 3 últimos dígitos visíveis + hash.
+
+[D13] (M) Imagens
+  Sem volume no compose, as imagens se perdem; não há rotina de remoção de
+  arquivos órfãos. Correção: volume nomeado montado em /app/static/uploads (ou
+  S3/MinIO) + backup junto do banco.
+
+[D14] (B) contact_events guarda user_agent e referrer como texto sem limite;
+  não há coluna de IP (bom). Truncar na aplicação (255) e manter a retenção de
+  90 dias. updated_at só é atualizado por trigger em businesses.
+
+[D15] (B) Sementes (categorias 54, cidades 13, planos 3, termos 30) estão dentro
+  das migrations. Funciona, mas mudar um preço exige nova migration (a 019 faz
+  isso). Para o MVP basta; depois mover para script de seed idempotente.
+
+B4. MIGRATION 021 (modelo; conferir nomes de constraints com \d <tabela>)
+-- 021_data_integrity.sql
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- 1) Índice que falhou na 018 (idempotente)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_job_report_daily
+  ON job_reports (job_id, ip_hash, ((created_at AT TIME ZONE 'UTC')::date));
+
+-- 2) Órfãos e NOT NULL (FAZER BACKUP ANTES)
+DELETE FROM business_review_log WHERE business_id IS NULL;
+DELETE FROM contact_events      WHERE business_id IS NULL;
+DELETE FROM invitations         WHERE business_id IS NULL;
+DELETE FROM lead_offers         WHERE lead_id IS NULL OR business_id IS NULL;
+DELETE FROM lead_reviews        WHERE lead_id IS NULL OR business_id IS NULL;
+DELETE FROM referrals           WHERE referred_business_id IS NULL;
+DELETE FROM reports             WHERE business_id IS NULL;
+DELETE FROM subscriptions       WHERE owner_user_id IS NULL OR plan_id IS NULL;
+ALTER TABLE business_review_log ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE contact_events      ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE invitations         ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE lead_offers         ALTER COLUMN lead_id SET NOT NULL, ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE lead_reviews        ALTER COLUMN lead_id SET NOT NULL, ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE referrals           ALTER COLUMN referred_business_id SET NOT NULL;
+ALTER TABLE reports             ALTER COLUMN business_id SET NOT NULL;
+ALTER TABLE subscriptions       ALTER COLUMN owner_user_id SET NOT NULL, ALTER COLUMN plan_id SET NOT NULL;
+-- payments.user_id: decidir. Se a anonimização mantém o usuário (recomendado),
+-- pode ser NOT NULL; senão, deixar NULL e alinhar o ORM.
+
+-- 3) Exclusão lógica e FKs de auditoria/financeiro como RESTRICT
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE users      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE business_review_log DROP CONSTRAINT business_review_log_business_id_fkey,
+  ADD CONSTRAINT business_review_log_business_id_fkey
+  FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE RESTRICT;
+ALTER TABLE job_review_log DROP CONSTRAINT job_review_log_job_id_fkey,
+  ADD CONSTRAINT job_review_log_job_id_fkey
+  FOREIGN KEY (job_id) REFERENCES job_openings(id) ON DELETE RESTRICT;
+ALTER TABLE payments DROP CONSTRAINT payments_user_id_fkey,
+  ADD CONSTRAINT payments_user_id_fkey
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_owner_user_id_fkey,
+  ADD CONSTRAINT subscriptions_owner_user_id_fkey
+  FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT;
+
+-- 4) Cidade por FK
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS city_id UUID REFERENCES cities(id);
+UPDATE businesses b SET city_id = c.id FROM cities c
+ WHERE b.city_id IS NULL AND b.state = c.state
+   AND lower(unaccent(b.city)) = lower(unaccent(c.name));
+CREATE INDEX IF NOT EXISTS idx_businesses_city_id ON businesses (city_id);
+
+-- 5) CHECKs (levantar os valores reais no código antes de criar cada um)
+ALTER TABLE users ADD CONSTRAINT ck_users_role CHECK (role IN ('admin','owner','user'));
+-- repetir o padrão para subscriptions.status, payments.status, leads.status,
+-- lead_offers.status, lead_reviews.status, referrals.status, reports.status,
+-- categories.status, cities.status, wa_optins.status,
+-- data_subject_requests.status, business_pending_changes.status
+
+-- 6) Unicidade
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email_lower ON users (lower(email));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_one_active
+  ON subscriptions (owner_user_id) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_business_whatsapp_name
+  ON businesses (whatsapp_e164, lower(name)) WHERE deleted_at IS NULL;
+
+-- 7) Índices das FKs (21)
+CREATE INDEX IF NOT EXISTS idx_bpc_proposed_by ON business_pending_changes (proposed_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_bpc_reviewed_by ON business_pending_changes (reviewed_by);
+CREATE INDEX IF NOT EXISTS idx_brl_admin ON business_review_log (admin_id);
+CREATE INDEX IF NOT EXISTS idx_biz_reviewed_by ON businesses (reviewed_by);
+CREATE INDEX IF NOT EXISTS idx_cat_proposed_by_biz ON categories (proposed_by_business_id);
+CREATE INDEX IF NOT EXISTS idx_alias_category ON category_aliases (category_id);
+CREATE INDEX IF NOT EXISTS idx_ce_job ON contact_events (job_id);
+CREATE INDEX IF NOT EXISTS idx_inv_created_by ON invitations (created_by);
+CREATE INDEX IF NOT EXISTS idx_inv_used_by ON invitations (used_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_job_created_by ON job_openings (created_by);
+CREATE INDEX IF NOT EXISTS idx_lr_lead ON lead_reviews (lead_id);
+CREATE INDEX IF NOT EXISTS idx_leads_matched_biz ON leads (matched_business_id);
+CREATE INDEX IF NOT EXISTS idx_pay_business ON payments (business_id);
+CREATE INDEX IF NOT EXISTS idx_pay_plan ON payments (plan_id);
+CREATE INDEX IF NOT EXISTS idx_ref_referred_biz ON referrals (referred_business_id);
+CREATE INDEX IF NOT EXISTS idx_ref_referred_user ON referrals (referred_user_id);
+CREATE INDEX IF NOT EXISTS idx_ref_referrer_biz ON referrals (referrer_business_id);
+CREATE INDEX IF NOT EXISTS idx_reports_resolved_by ON reports (resolved_by);
+CREATE INDEX IF NOT EXISTS idx_sub_business ON subscriptions (business_id);
+CREATE INDEX IF NOT EXISTS idx_sub_plan ON subscriptions (plan_id);
+-- (job_reports.job_id já fica coberto pelo índice único do item 1)
+
+Depois da 021: alinhar os modelos SQLAlchemy (nullable, deleted_at, city_id,
+current_period_start) e adicionar teste que compara modelos x banco (o script que
+usei está descrito na Sprint S2).
+
+--------------------------------------------------------------------------------
+B5. ACHADOS DE IDENTIDADE, SESSÃO E SEGURANÇA AINDA ABERTOS NESTA VERSÃO
+--------------------------------------------------------------------------------
+O que melhorou (confirmado): endpoints perigosos removidos (system/migrate,
+reset-businesses, test-evolution, search/audit, simulate-activation), nenhum
+código fixo de OTP nem dev_code, sem DDL em runtime, lifespan no lugar de
+on_event, OTP com resposta genérica, verify-otp sem alterar status, admin por
+variável de ambiente (com a falha da A1).
+
+Ainda abertos:
+[S1] (C) Login de contingência do frontend (app/api/auth/login/route.ts)
+  Se o backend falhar, o frontend cria sessão de admin sozinho: aceita o e-mail
+  do admin SEM senha quando ADMIN_PASSWORD está vazio, aceita QUALQUER e-mail com
+  a senha do admin, e assina o token localmente com um JWT padrão (usuário
+  0000...0001 que não existe no banco). Remover o bloco inteiro: login sempre
+  passa pelo backend; se o backend cair, mostrar erro.
+[S2] (C) Segredo JWT padrão público em 3 lugares
+  docker-compose.yml (valor padrão do JWT_SECRET_KEY), lib/authServer.ts e
+  middleware.ts usam o MESMO texto de fallback, que está no repositório. Quem não
+  definir o segredo sobe com chave pública: cookies de admin falsificáveis no
+  middleware e tokens válidos no backend. Sem fallback em nenhum dos três: falhar
+  ao iniciar se o segredo não existir.
+[S3] (A) Candidatura "de mentira" quando o backend cai (A3.6) - remover o
+  fallback e devolver erro 503 honesto.
+[S4] (A) IP do cliente falsificável
+  get_client_ip confia no cabeçalho CF-Connecting-IP sem verificar se a requisição
+  veio da Cloudflare; as rotas do Next repassam o X-Forwarded-For recebido do
+  cliente quando não há cabeçalho da Cloudflare. Resultado: o rate limit pode ser
+  contornado enviando cabeçalhos falsos. Aceitar CF-Connecting-IP só quando o
+  peer for faixa da Cloudflare (ou remover) e configurar TRUSTED_PROXY_HOPS de
+  acordo com o seu desenho real; no Next, sobrescrever o X-Forwarded-For com o IP
+  do socket.
+[S5] (A) OTP e limites do OTP na memória do processo (A3.3) - mover para Redis.
+[S6] (M) CSP do Next com 'unsafe-inline' e 'unsafe-eval' e connect-src amplo.
+  Migrar para CSP com nonce. O middleware só protege rotas /admin/* (a página
+  /painel-empresa depende do backend para barrar).
+[S7] (M) Admin por variável: falha de pré-cadastro (A1) e comparação não
+  constante - substituídas pelo desenho da A1.
+
+--------------------------------------------------------------------------------
+PARTE C - PLANO EM SPRINTS
+--------------------------------------------------------------------------------
+Estimativas em dias de trabalho com IA + revisão. Cada sprint termina com testes
+verdes e PARA para confirmação.
+
+SPRINT S0 - DESTRAVAR (1-2 dias)
+ T0.1 Corrigir a 018 (índice) e fazer o CI aplicar TODAS as migrations do zero
+      em PostgreSQL+PostGIS (service container). Corrigir o teste que falha
+      (drift) removendo o uso de 'manual_reset'.
+ T0.2 UM caminho de migração: serviço "migrate" de execução única no compose
+      (migrate.py com a URL do ambiente), backend só sobe depois; migrate.py
+      passa a ler DATABASE_URL da variável de ambiente. Remover alembic/ e
+      mover reset_all.sql para scripts/dev (com confirmação interativa).
+ T0.3 Admin por variável de ambiente conforme A1 (ensure_admin no lifespan);
+      remover a lógica de admin do login do frontend (S1).
+ T0.4 Remover os fallbacks de JWT em compose, authServer.ts e middleware.ts
+      (S2); falhar ao iniciar sem segredo forte.
+ T0.5 Remover o fallback de candidatura falsa e de categorias de exemplo
+      (S3, A3.7): erro honesto quando o backend estiver indisponível.
+ T0.6 Volume nomeado para /static/uploads no compose (D13).
+ Aceite: banco novo via compose sobe com 20+ migrations sem erro; admin entra;
+ registrar o e-mail do admin antes NÃO tranca o admin (teste); candidatura com
+ backend desligado responde erro (não 201).
+
+SPRINT S1 - CADASTRO ÚNICO E LOGIN SIMPLES (2-3 dias)
+ Objetivo: "cadastrar empresa" = criar conta + empresa de uma vez.
+ T1.1 POST /api/v1/businesses/register (corpo único): owner {nome, e-mail,
+      senha >= 10, whatsapp}, empresa {...mesmos campos de hoje}, consentimentos.
+      Numa única transação: cria User(role=owner), Business(pending_review,
+      owner_user_id preenchido), business_categories, consents e log. Responde
+      com sessão (cookies HttpOnly via BFF do Next) e o status "Em análise".
+      Proteções: rate limit (Redis, IP real), Turnstile, honeypot, e-mail único
+      (lower), senha com bcrypt.
+ T1.2 Login do dono por e-mail e senha (mesma rota /auth/login). "Esqueci a
+      senha": no MVP, redefinição pelo admin ou por OTP do WhatsApp quando o
+      provedor estiver configurado.
+ T1.3 Página "Minha empresa": mostra status (em análise/aprovada/reprovada com
+      motivo), edição dos campos de baixo risco, vagas. Mensagem clara quando
+      estiver em análise.
+ T1.4 OTP do WhatsApp vira OPCIONAL (selo "WhatsApp verificado"), com estado no
+      Redis, e só habilitado se o provedor estiver configurado.
+ T1.5 Remover /auth/register (usuário sem função) e o fluxo anônimo de
+      candidatura; manter cadastro assistido do admin apenas se for usado.
+ T1.6 Cobertura: testes de ponta a ponta do fluxo cadastrar -> admin aprova ->
+      aparece na vitrine -> dono edita.
+ Aceite: um empresário novo cria empresa e consegue entrar logo em seguida, sem
+ WhatsApp configurado; o admin aprova pelo painel e a empresa aparece na busca.
+
+SPRINT S2 - INTEGRIDADE DOS DADOS (2-3 dias)
+ T2.1 Aplicar a migration 021 (B4) com backup prévio e script de verificação de
+      órfãos; ajustar o ORM (nullable, deleted_at, city_id,
+      current_period_start) e remover o campo "cidade em texto" dos formulários
+      (seleção de lista de cidades).
+ T2.2 Teste modelos x banco no CI: subir PostgreSQL, aplicar migrations,
+      comparar Base.metadata com o inspector (tabelas, colunas, nullable) e falhar
+      em qualquer diferença.
+ T2.3 Anonimização/exclusão (D5): função e ação do admin ligada ao
+      data_subject_requests, com log; testes cobrindo "empresa some da vitrine,
+      dados pessoais anonimizados, auditoria e financeiro preservados".
+ T2.4 CHECKs de status/role e valores únicos (D6, D7) com testes de violação.
+ T2.5 Regra única de visibilidade documentada e usada em UM lugar
+      (função/visão SQL public_businesses) por busca, perfil, vagas e sitemap.
+ Aceite: teste de drift verde; tentativa de inserir órfão/status inválido falha
+ no banco; pedido de exclusão executa de ponta a ponta.
+
+SPRINT S3 - ENXUGAR O PROJETO (2 dias)
+ Não apagar dados nem tabelas: usar flags de configuração.
+ CONGELAR (flag desligada, rotas e abas escondidas, testes marcados):
+   - Monetização: plans, subscriptions, payments, referrals (FEATURE_PAYMENTS).
+   - Bot de leads no WhatsApp: leads, lead_offers, lead_reviews, wa_events,
+     wa_optins (FEATURE_WHATSAPP_BOT).
+   - Rede de indicações: peer_endorsements (FEATURE_NETWORK).
+   - Lista de espera por cidade (FEATURE_WAITLIST), convites e importação CSV
+     (FEATURE_ADMIN_TOOLS).
+ MANTER (núcleo): users, businesses, categories (+aliases), cities,
+   business_categories, job_openings (+job_reports, job_review_log,
+   moderation_terms), business_review_log, business_pending_changes,
+   contact_events, reports, consents, data_subject_requests, uploads.
+ REMOVER (código morto): fallbacks e mocks do frontend, cache de categorias em
+   localStorage, /auth/register, pasta alembic, cópias duplicadas de relatórios
+   na raiz.
+ T3.1 Implementar as flags (config + inclusão condicional de routers + esconder
+      itens no frontend).
+ T3.2 Atualizar README com o escopo do MVP e o mapa de módulos.
+ Aceite: com todas as flags desligadas, a aplicação sobe, testes do núcleo
+ passam e nenhuma tela mostra recurso congelado.
+
+SPRINT S4 - VITRINE + VAGAS FUNCIONANDO DE PONTA A PONTA (2 dias)
+ T4.1 Validar o módulo de vagas após a correção da 018: criar vaga, moderação,
+      selo "Contratando" no card, /vagas, clique em "Quero me candidatar".
+ T4.2 Segurança pendente do núcleo: S4 (IP real), S5 (OTP em Redis se mantido),
+      S6 (CSP com nonce), tetos de busca.
+ T4.3 Runbook: deploy no Easypanel, variáveis obrigatórias, backup do banco e
+      dos uploads, restauração testada, rotação de segredos.
+ Aceite: ensaio completo em ambiente limpo (banco novo): cadastrar, aprovar,
+ publicar vaga, candidatar, denunciar, anonimizar.
+
+--------------------------------------------------------------------------------
+PARTE D - PROMPT MESTRE (cole na outra IA de código, junto com o projeto)
+--------------------------------------------------------------------------------
+Você é um engenheiro sênior full-stack e de dados (FastAPI async, SQLAlchemy,
+PostgreSQL/PostGIS, Redis, Next.js). Recebe o projeto "Patriota Indica" e este
+relatório. O objetivo é SIMPLIFICAR: um portal-vitrine onde empresários se
+cadastram e uma seção simples de vagas. Execute as sprints S0 -> S4, uma por vez.
+
+REGRAS
+ 1. Ao final de cada sprint: rode os testes, liste arquivos alterados e critérios
+    de aceite cumpridos e PARE para confirmação.
+ 2. Não remova funcionalidades congeladas: apenas desligue por flag. Nunca
+    apague tabelas ou dados.
+ 3. Nenhuma falha pode ser escondida: sem fallbacks que devolvem sucesso falso,
+    sem except que engole erro, sem dados de exemplo no código.
+ 4. Segredos: nenhum valor padrão; a aplicação falha ao iniciar se faltar ou for
+    fraco (JWT, senha do admin, banco, Redis).
+ 5. Mudanças de esquema só por migration numerada (aplicada pelo runner único) e
+    sempre com teste no CI que sobe PostgreSQL+PostGIS e aplica tudo do zero.
+ 6. Autenticação só no backend (hash no banco, cookies HttpOnly via BFF). O
+    frontend nunca decide quem é admin nem cria sessão sozinho.
+ 7. Todo dado novo tem dono, regra de exclusão e retenção definidas; auditoria e
+    histórico financeiro nunca são apagados em cascata.
+ 8. Explique em 1-2 linhas o motivo de cada decisão. Em dúvida de regra de
+    negócio, pergunte antes de implementar.
+
+DECISÕES QUE O DONO AINDA PRECISA CONFIRMAR
+ a) Login do empresário: e-mail+senha (recomendado) com OTP do WhatsApp só como
+    selo, ou apenas OTP do WhatsApp?
+ b) Uma empresa por WhatsApp ou várias por dono (impacta o índice único da 021)?
+ c) Congelar monetização, bot de WhatsApp e rede de indicações agora e retomar
+    depois do lançamento do MVP?
+ d) Redefinição de senha: pelo admin no começo, ou já com e-mail transacional?
+
+Comece pela SPRINT S0.
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

@@ -2,11 +2,9 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const JWT_SECRET =
-  process.env.JWT_SECRET_KEY ||
-  'f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782';
+const JWT_SECRET = process.env.JWT_SECRET_KEY || '';
 
-const secretKey = new TextEncoder().encode(JWT_SECRET);
+const secretKey = new TextEncoder().encode(JWT_SECRET || 'dev_insecure_key_for_build_only_32_chars_min');
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
