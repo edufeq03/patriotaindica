@@ -95,7 +95,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_cities_status') THEN
-        ALTER TABLE cities ADD CONSTRAINT ck_cities_status CHECK (status IN ('active', 'inactive'));
+        ALTER TABLE cities ADD CONSTRAINT ck_cities_status CHECK (status IN ('active', 'soon', 'inactive'));
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_data_subject_requests_status') THEN
