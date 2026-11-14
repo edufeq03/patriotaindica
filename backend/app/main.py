@@ -20,6 +20,23 @@ is_prod = (settings.ENVIRONMENT == "production" and not settings.DEBUG)
 async def lifespan(app: FastAPI):
     # Startup: inicializa pool persistente do Redis
     await init_redis_pool()
+
+    # Startup: garante execução de migrações SQL pendentes de forma segura e idempotente
+    try:
+        from database.scripts.migrate import run_migrations
+    except ImportError:
+        try:
+            from backend.database.scripts.migrate import run_migrations
+        except ImportError:
+            run_migrations = None
+
+    if run_migrations and getattr(settings, "DATABASE_URL", None):
+        try:
+            logger.info("Verificando e aplicando migrações de banco no startup...")
+            await run_migrations(settings.DATABASE_URL, verbose=False)
+        except Exception as e:
+            logger.warning("Falha ao rodar migrações automaticamente no lifespan: %s", e)
+
     # Startup: garante existencia e papel do admin no banco (A1 / S0)
     await ensure_admin()
     yield
