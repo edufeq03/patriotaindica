@@ -18,7 +18,14 @@ import asyncpg
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+# Procura a pasta migrations em caminhos possíveis
 MIGRATIONS_DIR = BASE_DIR / "database" / "migrations"
+if not MIGRATIONS_DIR.exists():
+    MIGRATIONS_DIR = BASE_DIR / "backend" / "database" / "migrations"
+if not MIGRATIONS_DIR.exists():
+    MIGRATIONS_DIR = Path("/app/database/migrations")
+if not MIGRATIONS_DIR.exists():
+    MIGRATIONS_DIR = Path("/app/backend/database/migrations")
 
 
 def to_asyncpg_dsn(url: str) -> str:
