@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_active_admin, get_current_user
 from backend.app.core.validators import BRAZIL_STATES, INSTAGRAM_REGEX
@@ -488,6 +489,12 @@ async def create_or_update_endorsement(
     """
     Cria ou atualiza uma recomendação de confiança para outra empresa parceira da rede.
     """
+    if not settings.FEATURE_NETWORK:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Módulo de rede de recomendações entre empresas congelado temporariamente.",
+        )
+
     if business_id == payload.target_business_id:
         raise HTTPException(status_code=400, detail="Uma empresa não pode recomendar a si própria.")
 

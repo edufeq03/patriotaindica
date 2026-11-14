@@ -172,8 +172,8 @@ function BusinessDashboardContent() {
       .catch(() => {});
   }, []);
 
-  // Estado do Login
-  const [loginTab, setLoginTab] = useState<'whatsapp' | 'email'>('whatsapp');
+  // Estado do Login (S1: E-mail e Senha é o método padrão primário)
+  const [loginTab, setLoginTab] = useState<'whatsapp' | 'email'>('email');
   const [whatsappPhone, setWhatsappPhone] = useState(() => searchParams?.get('phone') || '');
   const [otpSent, setOtpSent] = useState(false);
   const [otpTargetBizId, setOtpTargetBizId] = useState<string | null>(null);
@@ -674,20 +674,8 @@ function BusinessDashboardContent() {
             </p>
           </div>
 
-          {/* Seletor de Métodos de Login */}
+          {/* Seletor de Métodos de Login (S1: E-mail e Senha primeiro) */}
           <div className="grid grid-cols-2 p-1 rounded-xl bg-[#070b0e] border border-[#182836] text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => { setLoginTab('whatsapp'); setAuthError(null); }}
-              className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                loginTab === 'whatsapp'
-                  ? 'bg-amber-500 text-black shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              WhatsApp (Sem Senha)
-            </button>
             <button
               type="button"
               onClick={() => { setLoginTab('email'); setAuthError(null); }}
@@ -700,6 +688,18 @@ function BusinessDashboardContent() {
               <KeyRound className="w-3.5 h-3.5" />
               E-mail e Senha
             </button>
+            <button
+              type="button"
+              onClick={() => { setLoginTab('whatsapp'); setAuthError(null); }}
+              className={`py-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                loginTab === 'whatsapp'
+                  ? 'bg-amber-500 text-black shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              WhatsApp OTP
+            </button>
           </div>
 
           {/* Feedback de Erro */}
@@ -710,7 +710,45 @@ function BusinessDashboardContent() {
             </div>
           )}
 
-          {/* Aba 1: WhatsApp OTP */}
+          {/* Aba 1: E-mail e Senha (Principal S1) */}
+          {loginTab === 'email' && (
+            <form onSubmit={handleEmailLogin} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">E-mail Cadastrado</label>
+                <input
+                  required
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1">Senha</label>
+                <input
+                  required
+                  type="password"
+                  placeholder="••••••••••••"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-lg shadow-amber-950/40 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                {authLoading ? 'Entrando...' : 'Entrar no Painel'}
+              </button>
+            </form>
+          )}
+
+          {/* Aba 2: WhatsApp OTP (Opcional/Secundário) */}
           {loginTab === 'whatsapp' && (
             <div>
               {!otpSent ? (
@@ -728,7 +766,7 @@ function BusinessDashboardContent() {
                       className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-sm"
                     />
                     <span className="text-[11px] text-slate-500 mt-1 block">
-                      Enviaremos um código de 6 dígitos direto para o seu WhatsApp oficial.
+                      Enviaremos um código de 6 dígitos para validação do seu WhatsApp.
                     </span>
                   </div>
 
@@ -793,58 +831,6 @@ function BusinessDashboardContent() {
                 </form>
               )}
             </div>
-          )}
-
-          {/* Aba 2: E-mail e Senha */}
-          {loginTab === 'email' && (
-            <form onSubmit={handleEmailLogin} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">E-mail Cadastrado</label>
-                <input
-                  required
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Senha</label>
-                <input
-                  required
-                  type="password"
-                  placeholder="••••••••••••"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] pt-1">
-                <span className="text-slate-400">Acesso de Demonstração</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail('empresa@patriotaindica.com.br');
-                    setLoginPassword('demo123');
-                  }}
-                  className="text-amber-400 hover:text-amber-300 underline font-medium cursor-pointer"
-                >
-                  Preencher dados de teste
-                </button>
-              </div>
-
-              <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs transition-all shadow-lg shadow-amber-950/40 flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                {authLoading ? 'Entrando...' : 'Entrar no Painel'}
-              </button>
-            </form>
           )}
 
           <div className="pt-2 text-center border-t border-[#182836]">
@@ -984,7 +970,7 @@ function BusinessDashboardContent() {
                   {currentStatus === 'pending_review' && (
                     <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-500/40 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      Reanálise em Andamento
+                      Em Análise pela Curadoria
                     </span>
                   )}
                 </div>
@@ -1021,6 +1007,19 @@ function BusinessDashboardContent() {
                 </Link>
               </div>
             </div>
+
+            {/* Aviso de Negócio em Análise (S1 - T1.3) */}
+            {currentStatus === 'pending_review' && (
+              <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 flex items-start gap-3.5 shadow-lg">
+                <Clock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs">
+                  <p className="font-bold text-amber-300">Empresa em Análise pela Equipe Curadora</p>
+                  <p className="text-slate-300 leading-relaxed">
+                    Seu negócio está em processo de verificação pela equipe do Patriota Indica. Enquanto isso, você já pode configurar todo o seu perfil, fotos, dados de contato e publicar vagas de emprego. Seu anúncio aparecerá na vitrine pública da busca assim que aprovado.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Banner da Carta de Princípios */}
             <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-950/25 via-[#0d151c] to-emerald-950/25 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">

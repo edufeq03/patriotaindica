@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.app.main import app
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_active_admin, get_current_user
 from backend.app.models.business import Business
@@ -432,6 +433,7 @@ def test_t1_6_revoke_consent_suspends_and_hides_business():
 # T1.7: Convites Seguros com Consumo Atômico e Validade Limitada
 # ==============================================================================
 
+@pytest.mark.skipif(not settings.FEATURE_ADMIN_TOOLS, reason="Módulo de convites congelado no MVP por FEATURE_ADMIN_TOOLS")
 def test_t1_7_invitation_days_valid_bounded():
     """T1.7: days_valid deve estar entre 1 e 14 dias; valores fora desse intervalo são rejeitados com 422."""
     admin = User(id=uuid.uuid4(), name="Admin", email="admin@patriota.com", role="admin", is_active=True)
@@ -458,6 +460,7 @@ def test_t1_7_invitation_days_valid_bounded():
         app.dependency_overrides.pop(get_current_active_admin, None)
 
 
+@pytest.mark.skipif(not settings.FEATURE_ADMIN_TOOLS, reason="Módulo de convites congelado no MVP por FEATURE_ADMIN_TOOLS")
 def test_t1_7_invitation_accept_does_not_grant_verified_seal():
     """T1.7: Aceitar convite vincula proprietário mas NUNCA concede selo is_verified automaticamente."""
     user = User(id=uuid.uuid4(), name="Novo Dono", email="novo@dono.com", role="user", is_active=True)
@@ -493,6 +496,174 @@ def test_t1_7_invitation_accept_does_not_grant_verified_seal():
         assert user.role == "owner"
         # O selo 'is_verified' NÃO é concedido automaticamente por convite
         assert biz.is_verified is False
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_t1_8_business_unified_register_atomic_flow():
+    """T1.1 (Sprint S1): Teste do cadastro unificado de dono + empresa sem obrigatoriedade de OTP."""
+    payload = {
+        "owner_name": "Dono Patriota Teste",
+        "owner_email": "dono.sprint1@teste.com",
+        "owner_password": "SenhaForteOwner123!",
+        "owner_phone": "19988887777",
+        "name": "Mecânica Patriota Express",
+        "description": "Oficina mecânica especializada em manutenção preventiva.",
+        "listing_type": "service",
+        "document_type": "CNPJ",
+        "document_number": "11222333000181",
+        "whatsapp": "19988887777",
+        "neighborhood": "Guanabara",
+        "city": "Campinas",
+        "state": "SP",
+        "consent_carta_principios": True,
+        "consent_termos": True,
+        "consent_privacidade": True,
+    }
+
+    async def override_db():
+        db = AsyncMock()
+        mock_user_check = MagicMock()
+        mock_user_check.scalar_one_or_none.return_value = None
+
+        mock_doc_check = MagicMock()
+        mock_doc_check.scalars.return_value.all.return_value = []
+
+        mock_slug_check = MagicMock()
+        mock_slug_check.scalar_one_or_none.return_value = None
+
+        db.execute.side_effect = [
+            mock_user_check,
+            mock_doc_check,
+            mock_slug_check,
+        ]
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        with patch("backend.app.api.v1.endpoints.businesses.geocode_address", new_callable=AsyncMock) as mock_geo, \
+             patch("backend.app.api.v1.endpoints.businesses.store_refresh_token", new_callable=AsyncMock) as mock_rt:
+            mock_geo.return_value = (-22.9064, -47.0616, "osm_nominatim", 0.95)
+            mock_rt.return_value = True
+
+            res = client.post("/api/v1/businesses/register", json=payload)
+            assert res.status_code == 201, res.text
+            data = res.json()
+            assert data["success"] is True
+            assert data["status"] == "pending_review"
+            assert "access_token" in data
+            assert "refresh_token" in data
+            assert data["user"]["email"] == "dono.sprint1@teste.com"
+            assert data["user"]["role"] == "owner"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_t1_5_auth_register_is_deprecated_410():
+    """T1.5 (Sprint S1): Rota /auth/register desativada com 410 GONE para evitar usuários sem papel."""
+    res = client.post("/api/v1/auth/register", json={
+        "name": "Usuario Avulso",
+        "email": "avulso@teste.com",
+        "password": "SenhaForte12345!"
+    })
+    assert res.status_code == 410
+    assert "desativado" in res.json()["detail"].lower()
+
+
+def test_t1_6_end_to_end_sprint1_lifecycle():
+    """
+    T1.6 (Sprint S1): Teste E2E do ciclo completo:
+    1. Registro unificado da empresa (dono + negócio em pending_review)
+    2. Admin aprova a empresa na triagem
+    3. Dono autenticado edita campos permitidos
+    """
+    biz_id = uuid.uuid4()
+    owner_id = uuid.uuid4()
+    admin_id = uuid.uuid4()
+
+    mock_biz = Business(
+        id=biz_id,
+        name="Padaria Patriota",
+        slug="padaria-patriota-campinas",
+        description="Pães e cafés artesanais",
+        status="pending_review",
+        owner_user_id=owner_id,
+        city="Campinas",
+        state="SP",
+        whatsapp="+5519999998888",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    admin_user = User(
+        id=admin_id,
+        name="Admin Curador",
+        email="admin@patriotaindica.com.br",
+        role="admin",
+        is_active=True,
+    )
+
+    owner_user = User(
+        id=owner_id,
+        name="Dono da Padaria",
+        email="dono@padaria.com",
+        role="owner",
+        is_active=True,
+    )
+
+    # 1. Admin aprova a empresa na triagem
+    async def override_db():
+        db = AsyncMock()
+        mock_biz_res = MagicMock()
+        mock_biz_res.scalar_one_or_none.return_value = mock_biz
+
+        mock_empty_list = MagicMock()
+        mock_empty_list.scalars.return_value.all.return_value = []
+
+        mock_sub_res = MagicMock()
+        mock_sub_res.scalars.return_value.first.return_value = None
+
+        db.execute.side_effect = [
+            mock_biz_res,    # select business
+            mock_empty_list, # check pending niches
+            mock_empty_list, # check duplicates
+            mock_sub_res,    # check owner subscription
+        ]
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_active_admin] = lambda: admin_user
+
+    try:
+        approve_res = client.post(
+            f"/api/v1/triage/decision/{biz_id}",
+            json={"action": "approve", "note": "Empresa validada e alinhada aos princípios."},
+        )
+        assert approve_res.status_code == 200, approve_res.text
+        assert mock_biz.status == "approved"
+    finally:
+        app.dependency_overrides.pop(get_current_active_admin, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    # 2. Dono logado edita descrição da empresa aprovada
+    async def override_owner_db():
+        db = AsyncMock()
+        mock_res = MagicMock()
+        mock_res.scalar_one_or_none.return_value = mock_biz
+        db.execute.return_value = mock_res
+        yield db
+
+    app.dependency_overrides[get_db] = override_owner_db
+    app.dependency_overrides[get_current_user] = lambda: owner_user
+
+    try:
+        update_res = client.put(
+            f"/api/v1/owner/{biz_id}/profile",
+            json={"description": "Nova descrição atualizada pelo dono."},
+        )
+        assert update_res.status_code == 200, update_res.text
+        assert mock_biz.description == "Nova descrição atualizada pelo dono."
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_db, None)

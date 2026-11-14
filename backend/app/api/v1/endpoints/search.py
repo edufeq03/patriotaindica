@@ -9,7 +9,7 @@ from geoalchemy2 import Geography
 
 from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
-from backend.app.models.business import Business, BusinessCategory
+from backend.app.models.business import Business, BusinessCategory, public_business_conditions
 from backend.app.models.category import Category
 from backend.app.models.jobs import JobOpening
 from backend.app.models.subscription import Plan, Subscription
@@ -33,7 +33,7 @@ async def search_nearby_businesses(
     city: Optional[str] = Query(None, max_length=100, description="Filtro por Cidade"),
     hiring: Optional[bool] = Query(None, description="Filtrar apenas empresas com vagas ativas"),
     page: int = Query(1, ge=1, le=50, description="Página"),
-    limit: int = Query(50, ge=1, le=200, description="Itens por página"),
+    limit: int = Query(50, ge=1, le=100, description="Itens por página (máximo 100)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -105,8 +105,7 @@ async def search_nearby_businesses(
         )
         .outerjoin(Plan, Plan.id == Subscription.plan_id)
         .where(
-            Business.status == "approved",
-            Business.owner_paused.is_(False),
+            *public_business_conditions(Business),
         )
     )
 

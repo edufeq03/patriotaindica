@@ -40,6 +40,8 @@ import {
   CreditCard,
   Gift,
   Users,
+  User,
+  KeyRound,
   Briefcase
 } from 'lucide-react';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES, calculateDistanceKm } from '@/lib/mockData';
@@ -109,16 +111,8 @@ export default function HomePage() {
     }
   };
 
-  // Categorias dinâmicas sincronizadas com o Admin
-  const [categoriesList, setCategoriesList] = useState<Category[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('guia_local_categories');
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return INITIAL_CATEGORIES;
-  });
+  // Categorias dinâmicas sincronizadas via API oficial
+  const [categoriesList, setCategoriesList] = useState<Category[]>(INITIAL_CATEGORIES);
 
   // Lista local de empresas
   const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
@@ -128,9 +122,12 @@ export default function HomePage() {
   const [showManifestoModal, setShowManifestoModal] = useState(false);
   const [submittedWhatsapp, setSubmittedWhatsapp] = useState('');
 
-  // Form State para Candidatura (Canal C)
+  // Form State para Candidatura e Cadastro Unificado de Empresa
   const [applicationForm, setApplicationForm] = useState({
     name: '',
+    owner_name: '',
+    owner_email: '',
+    owner_password: '',
     category_slug: 'eletricista',
     custom_category: '',
     document_number: '',
@@ -430,33 +427,61 @@ export default function HomePage() {
       return;
     }
 
+    if (!applicationForm.owner_name.trim()) {
+      setApplicationErrorMsg("Por favor, informe seu nome completo para a conta de proprietário.");
+      setApplicationSubmitting(false);
+      return;
+    }
+
+    if (!applicationForm.owner_email.trim() || !applicationForm.owner_email.includes('@')) {
+      setApplicationErrorMsg("Por favor, informe um endereço de e-mail válido para acesso ao seu painel.");
+      setApplicationSubmitting(false);
+      return;
+    }
+
+    if (!applicationForm.owner_password || applicationForm.owner_password.length < 10) {
+      setApplicationErrorMsg("A senha de acesso ao painel deve conter no mínimo 10 caracteres.");
+      setApplicationSubmitting(false);
+      return;
+    }
+
     const payload = {
-      name: applicationForm.name.trim(),
-      description: applicationForm.description.trim() || null,
-      listing_type: 'service',
-      document_type: cleanDoc ? docType : 'CNPJ',
-      document_number: cleanDoc || null,
-      whatsapp: applicationForm.whatsapp.trim(),
-      neighborhood: applicationForm.neighborhood.trim(),
-      city: applicationForm.city.trim() || 'Campinas',
-      state: (applicationForm.state.trim() || 'SP').toUpperCase(),
-      service_mode: effectiveMode,
-      serves_at_location: applicationForm.serves_at_location,
-      serves_at_customer: applicationForm.serves_at_customer,
-      serves_online: applicationForm.serves_online,
-      service_radius_km: applicationForm.serves_at_customer ? Math.min(150, Math.max(1, Number(applicationForm.service_radius_km) || 20)) : null,
-      category_ids: isUuid && cat ? [cat.id] : [],
-      primary_category_id: isUuid && cat ? cat.id : null,
-      proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
-      referred_by_code: applicationForm.referred_by_code.trim() || null,
-      show_full_address: false,
-      consent_carta_principios: Boolean(applicationForm.accepted_manifesto),
-      consent_termos: Boolean(applicationForm.accepted_privacy),
-      consent_privacidade: Boolean(applicationForm.accepted_privacy),
+      owner: {
+        name: applicationForm.owner_name.trim(),
+        email: applicationForm.owner_email.trim().toLowerCase(),
+        password: applicationForm.owner_password,
+        phone: applicationForm.whatsapp.trim() || null,
+      },
+      business: {
+        name: applicationForm.name.trim(),
+        description: applicationForm.description.trim() || null,
+        listing_type: 'service',
+        document_type: cleanDoc ? docType : 'CNPJ',
+        document_number: cleanDoc || null,
+        whatsapp: applicationForm.whatsapp.trim(),
+        neighborhood: applicationForm.neighborhood.trim(),
+        city: applicationForm.city.trim() || 'Campinas',
+        state: (applicationForm.state.trim() || 'SP').toUpperCase(),
+        service_mode: effectiveMode,
+        serves_at_location: applicationForm.serves_at_location,
+        serves_at_customer: applicationForm.serves_at_customer,
+        serves_online: applicationForm.serves_online,
+        service_radius_km: applicationForm.serves_at_customer ? Math.min(150, Math.max(1, Number(applicationForm.service_radius_km) || 20)) : null,
+        category_ids: isUuid && cat ? [cat.id] : [],
+        primary_category_id: isUuid && cat ? cat.id : null,
+        proposed_niche: isCustom ? customName : ((!isUuid && cat) ? cat.name : null),
+        referred_by_code: applicationForm.referred_by_code.trim() || null,
+        show_full_address: false,
+      },
+      consents: {
+        consent_carta_principios: Boolean(applicationForm.accepted_manifesto),
+        consent_termos: Boolean(applicationForm.accepted_privacy),
+        consent_privacidade: Boolean(applicationForm.accepted_privacy),
+      },
     };
 
     try {
-      const res = await fetch('/api/v1/businesses/application', {
+      const res = await fetch('/api/v1/businesses/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1475,14 +1500,14 @@ export default function HomePage() {
                 </div>
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
                   <Link
-                    href={`/painel-empresa?phone=${encodeURIComponent(submittedWhatsapp || applicationForm.whatsapp)}`}
+                    href="/painel-empresa"
                     onClick={() => {
                       setShowApplicationModal(false);
                       setApplicationSubmitted(false);
                     }}
                     className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors shadow-lg"
                   >
-                    Ir para o Painel da Empresa →
+                    Ir para o Painel da Empresa (Acesso Imediato) →
                   </Link>
                   <button
                     onClick={() => {
@@ -1497,6 +1522,51 @@ export default function HomePage() {
               </div>
             ) : (
               <form onSubmit={handleSubmitApplication} className="space-y-4 text-xs">
+                {/* Dados da Conta do Proprietário (S1 - Cadastro Unificado) */}
+                <div className="p-3.5 rounded-xl bg-[#0a1017] border border-[#1b2b3a] space-y-3">
+                  <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs">
+                    <User className="w-3.5 h-3.5" />
+                    <span>Dados do Responsável (Acesso Imediato ao Painel)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Seu Nome Completo *</label>
+                      <input
+                        required
+                        type="text"
+                        placeholder="Ex: Carlos Alberto Silva"
+                        value={applicationForm.owner_name}
+                        onChange={(e) => setApplicationForm({ ...applicationForm, owner_name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-medium mb-1">Seu E-mail *</label>
+                      <input
+                        required
+                        type="email"
+                        placeholder="seu-email@dominio.com"
+                        value={applicationForm.owner_email}
+                        onChange={(e) => setApplicationForm({ ...applicationForm, owner_email: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-medium mb-1">Criar Senha de Acesso (mínimo 10 caracteres) *</label>
+                    <input
+                      required
+                      type="password"
+                      minLength={10}
+                      placeholder="••••••••••••"
+                      value={applicationForm.owner_password}
+                      onChange={(e) => setApplicationForm({ ...applicationForm, owner_password: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg bg-[#070b0e] border border-[#182836] text-white focus:border-amber-500 outline-none text-xs"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">Essa senha será usada para você gerenciar o perfil, métricas e vagas da empresa no painel.</p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-slate-300 font-medium mb-1">Nome do Negócio / Fantasia *</label>
                   <input

@@ -50,6 +50,7 @@ class Business(Base):
     instagram = Column(String(100), nullable=True)
 
     # Localização
+    city_id = Column(UUID(as_uuid=True), ForeignKey("cities.id", ondelete="SET NULL"), nullable=True, index=True)
     street = Column(String(255), nullable=True)
     number = Column(String(50), nullable=True)
     neighborhood = Column(String(100), nullable=False)
@@ -89,6 +90,7 @@ class Business(Base):
     # Full text search
     search_vector = Column(TSVECTOR, nullable=True)
 
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -127,3 +129,19 @@ class BusinessCategory(Base):
 
     business = relationship("Business", back_populates="categories")
     category = relationship("Category", back_populates="businesses")
+
+
+def public_business_conditions(model_cls=Business):
+    """
+    Regra Canônica de Visibilidade Pública (T2.5 / Sprint S2):
+    Alinhada estritamente com a VIEW public_businesses da migration 021:
+    - Status 'approved'
+    - deleted_at IS NULL (não excluído por LGPD)
+    - owner_paused IS FALSE (não pausado pelo proprietário)
+    """
+    return [
+        model_cls.status == "approved",
+        model_cls.deleted_at.is_(None),
+        model_cls.owner_paused.is_(False),
+    ]
+

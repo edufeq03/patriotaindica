@@ -61,7 +61,7 @@ class JobReviewLog(Base):
     __tablename__ = "job_review_log"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    job_id = Column(UUID(as_uuid=True), ForeignKey("job_openings.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id = Column(UUID(as_uuid=True), ForeignKey("job_openings.id", ondelete="RESTRICT"), nullable=False, index=True)
     actor = Column(String(10), nullable=False)  # 'system', 'admin', 'owner'
     actor_id = Column(UUID(as_uuid=True), nullable=True)
     action = Column(String(30), nullable=False)  # 'auto_publish', 'flag_review', 'approve', 'reject', 'hold', 'release', 'expire', 'close', 'renew'

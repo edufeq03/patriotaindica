@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.security import get_current_user
 from backend.app.models.business import Business, PeerEndorsement
@@ -114,6 +115,7 @@ async def test_t7_1_availability_toggle(mock_owner_user, mock_approved_business)
 # T7.2: Endossos e Recomendações Mútuas Entre Pares
 # ==============================================================================
 
+@pytest.mark.skipif(not settings.FEATURE_NETWORK, reason="Rede de indicações congelada no MVP por FEATURE_NETWORK")
 @pytest.mark.anyio
 async def test_t7_2_peer_endorsements_flow(mock_owner_user, mock_approved_business, mock_target_business):
     app.dependency_overrides[get_current_user] = lambda: mock_owner_user

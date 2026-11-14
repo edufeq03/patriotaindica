@@ -219,3 +219,170 @@ async def test_t2_3_rate_limit_fail_closed_behavior():
                 fail_closed=True,
             )
         assert exc_info.value.status_code == 503
+
+
+
+def test_t2_1_model_alignment_with_migration_021():
+    """
+    T2.1 / T2.2 (Sprint S2): Valida que os modelos SQLAlchemy estão 100% alinhados
+    com a migration 021_data_integrity.sql (deleted_at, city_id e FKs RESTRICT).
+    """
+    from backend.app.models.business import Business, public_business_conditions
+    from backend.app.models.events import BusinessReviewLog
+    from backend.app.models.jobs import JobReviewLog
+    from backend.app.models.payment import Payment
+    from backend.app.models.subscription import Subscription
+    from backend.app.models.user import User
+
+    # 1. Colunas de Exclusão Lógica e Cidade FK
+    assert hasattr(User, "deleted_at")
+    assert hasattr(Business, "deleted_at")
+    assert hasattr(Business, "city_id")
+
+    # 2. FKs com ON DELETE RESTRICT (Proteção contra perda em cascata de histórico)
+    brl_fk = next(fk for fk in BusinessReviewLog.__table__.columns["business_id"].foreign_keys)
+    assert brl_fk.ondelete == "RESTRICT"
+
+    jrl_fk = next(fk for fk in JobReviewLog.__table__.columns["job_id"].foreign_keys)
+    assert jrl_fk.ondelete == "RESTRICT"
+
+    pay_fk = next(fk for fk in Payment.__table__.columns["user_id"].foreign_keys)
+    assert pay_fk.ondelete == "RESTRICT"
+
+    sub_fk = next(fk for fk in Subscription.__table__.columns["owner_user_id"].foreign_keys)
+    assert sub_fk.ondelete == "RESTRICT"
+
+    # 3. Regra Canônica de Visibilidade Pública (T2.5)
+    conds = public_business_conditions(Business)
+    assert len(conds) == 3
+
+
+@pytest.mark.anyio
+async def test_t2_3_lgpd_anonymization_and_exclusion_flow(test_client):
+    """
+    T2.3 (Sprint S2): Anonimização LGPD de ponta a ponta:
+    - Admin processa pedido do titular
+    - Dados do usuário são anonimizados
+    - Empresas somem da vitrine (deleted_at)
+    - Histórico e auditoria permanecem preservados
+    """
+    from backend.app.core.database import get_db
+    from backend.app.core.security import get_current_active_admin
+    from backend.app.models.business import Business
+    from backend.app.models.events import DataSubjectRequest
+    from backend.app.models.user import User
+
+    req_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    biz_id = uuid.uuid4()
+
+    mock_req = DataSubjectRequest(
+        id=req_id,
+        email="titular.lgpd@exemplo.com",
+        request_type="deletion",
+        status="received",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    mock_user = User(
+        id=user_id,
+        name="Carlos Alberto LGPD",
+        email="titular.lgpd@exemplo.com",
+        phone="19999998888",
+        role="owner",
+        is_active=True,
+    )
+
+    mock_biz = Business(
+        id=biz_id,
+        name="Loja do Carlos",
+        slug="loja-do-carlos",
+        owner_user_id=user_id,
+        status="approved",
+        whatsapp="19999998888",
+        deleted_at=None,
+    )
+
+    admin_user = User(
+        id=uuid.uuid4(),
+        name="DPO Admin",
+        email="dpo@patriotaindica.com.br",
+        role="admin",
+        is_active=True,
+    )
+
+    async def override_db():
+        db = AsyncMock()
+        mock_req_res = MagicMock()
+        mock_req_res.scalar_one_or_none.return_value = mock_req
+
+        mock_user_res = MagicMock()
+        mock_user_res.scalar_one_or_none.return_value = mock_user
+
+        mock_biz_res = MagicMock()
+        mock_biz_res.scalars.return_value.all.return_value = [mock_biz]
+
+        db.execute.side_effect = [
+            mock_req_res,
+            mock_user_res,
+            mock_biz_res,
+        ]
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_current_active_admin] = lambda: admin_user
+
+    try:
+        res = test_client.post(f"/api/v1/privacy/admin/requests/{req_id}/anonymize")
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["success"] is True
+        assert data["status"] == "completed"
+
+        # Verifica anonimização do usuário
+        assert "Anonimizado" in mock_user.name
+        assert "anon_" in mock_user.email
+        assert mock_user.phone is None
+        assert mock_user.is_active is False
+        assert mock_user.deleted_at is not None
+
+        # Verifica exclusão lógica da empresa
+        assert mock_biz.deleted_at is not None
+        assert mock_biz.status == "suspended"
+        assert mock_biz.owner_paused is True
+        assert mock_biz.whatsapp == "00000000000"
+    finally:
+        app.dependency_overrides.pop(get_current_active_admin, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_t2_5_canonical_visibility_rule_excludes_deleted_businesses(test_client):
+    """
+    T2.5 (Sprint S2): Valida que a regra de visibilidade pública rejeita empresas com deleted_at preenchido.
+    """
+    from backend.app.core.database import get_db
+    from backend.app.models.business import Business
+
+    deleted_biz = Business(
+        id=uuid.uuid4(),
+        name="Empresa Excluída",
+        slug="empresa-excluida",
+        status="approved",
+        owner_paused=False,
+        deleted_at=datetime.now(timezone.utc),
+    )
+
+    async def override_db():
+        db = AsyncMock()
+        mock_res = MagicMock()
+        # Se a query filtrar deleted_at IS NULL, o banco retornará None
+        mock_res.scalar_one_or_none.return_value = None
+        db.execute.return_value = mock_res
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        res = test_client.get("/api/v1/businesses/by-slug/empresa-excluida")
+        assert res.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_db, None)

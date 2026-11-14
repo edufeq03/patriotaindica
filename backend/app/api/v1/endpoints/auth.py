@@ -209,49 +209,16 @@ async def logout(
     return {"detail": "Sessão encerrada com sucesso."}
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def register(
-    payload: UserCreate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
+@router.post("/register", status_code=status.HTTP_410_GONE)
+async def register():
     """
-    Criação pública de usuário.
-    SEGURANÇA:
-    - [H1, T2.3] Rate limit por IP (3/hora) com fail-closed.
-    - [H8] Role 'admin' ou 'owner' NUNCA pode ser autoatribuída. Todos nascem como 'user'.
-    - [H8] Verificação segura de unicidade de e-mail.
+    [T1.5] Rota desativada conforme plano de simplificação (Sprint S1).
+    Empresários realizam cadastro unificado atômico via POST /api/v1/businesses/register.
     """
-    client_ip = get_client_ip(request)
-    await check_rate_limit(
-        key=f"ratelimit:register:{client_ip}",
-        limit=3,
-        window_seconds=3600,
-        error_msg="Limite de cadastros por hora excedido para seu endereço IP.",
-        fail_closed=True,
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Cadastro público avulso desativado. Utilize o cadastro unificado de empresa em /api/v1/businesses/register.",
     )
-
-    clean_email = payload.email.lower().strip()
-    stmt = select(User).where(User.email == clean_email)
-    exists = (await db.execute(stmt)).scalar_one_or_none()
-    if exists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Não foi possível concluir o cadastro com as informações fornecidas.",
-        )
-
-    # Novo usuário público SEMPRE nasce como 'user'
-    new_user = User(
-        name=payload.name.strip(),
-        email=clean_email,
-        password_hash=get_password_hash(payload.password),
-        phone=payload.phone.strip() if payload.phone else None,
-        role="user",
-    )
-    db.add(new_user)
-    await db.commit()
-    await db.refresh(new_user)
-    return new_user
 
 
 @router.get("/me", response_model=UserOut)

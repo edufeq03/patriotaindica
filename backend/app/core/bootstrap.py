@@ -55,3 +55,4 @@ async def ensure_admin() -> None:
                 logger.info("Admin existente atualizado e promovido no banco [%s].", admin_email)
     except Exception as exc:
         logger.warning("Nao foi possivel executar ensure_admin na inicializacao (banco indisponivel ou tabelas ausentes): %s", exc)
+

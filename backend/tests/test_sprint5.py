@@ -32,6 +32,7 @@ from backend.app.services.whatsapp.meta_cloud import MetaCloudWhatsAppProvider
 client = TestClient(app)
 
 
+@pytest.mark.skipif(not settings.FEATURE_WHATSAPP_BOT, reason="Bot de WhatsApp congelado no MVP por FEATURE_WHATSAPP_BOT")
 def test_t5_1_meta_webhook_verification_get():
     """T5.1: Verificação oficial do Webhook da Meta Cloud API com hub.challenge e hub.verify_token."""
     verify_token = settings.META_WHATSAPP_VERIFY_TOKEN
@@ -51,6 +52,7 @@ def test_t5_1_meta_webhook_verification_get():
     assert res_fail.status_code == 403
 
 
+@pytest.mark.skipif(not settings.FEATURE_WHATSAPP_BOT, reason="Bot de WhatsApp congelado no MVP por FEATURE_WHATSAPP_BOT")
 def test_t5_1_meta_webhook_signature_validation():
     """T5.1: Validação de assinatura criptográfica X-Hub-Signature-256 no POST de eventos da Meta."""
     app_secret = "meta_test_secret_key_123"
@@ -246,6 +248,7 @@ async def test_t5_1_opt_out_lgpd_parar_keyword():
     assert added_obj.status == "revoked"
 
 
+@pytest.mark.skipif(not settings.FEATURE_WHATSAPP_BOT, reason="Bot de WhatsApp congelado no MVP por FEATURE_WHATSAPP_BOT")
 def test_t5_7_owner_leads_summary_and_fast_responder_badge():
     """T5.7: Endpoint /owner/leads-summary calcula taxa de aceite, média de SLA e selo Responde Rápido."""
     owner_id = uuid4()

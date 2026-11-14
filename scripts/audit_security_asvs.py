@@ -89,16 +89,19 @@ def run_asvs_audit() -> bool:
     # 5. Anti-tampering no Webhook da Meta / WhatsApp (ASVS 13.1)
     print("\n[ASVS 13.1] Verificando rejeição de webhooks WhatsApp sem assinatura X-Hub...")
     from backend.app.core.config import settings
-    old_secret = settings.META_APP_SECRET
-    settings.META_APP_SECRET = "test_meta_app_secret_123"
-    try:
-        wa_resp = client.post("/api/v1/webhooks/whatsapp", json={"entry": [{"id": "123"}]})
-        if wa_resp.status_code != 401:
-            failures.append(f"Webhook WhatsApp deveria exigir X-Hub-Signature-256 (retornou {wa_resp.status_code})")
-        else:
-            print("  ✓ Webhook WhatsApp rejeita requisições não assinadas (401 Unauthorized).")
-    finally:
-        settings.META_APP_SECRET = old_secret
+    if not settings.FEATURE_WHATSAPP_BOT:
+        print("  ✓ Webhook WhatsApp congelado por Feature Flag no MVP (404 Not Found - Módulo Inativo).")
+    else:
+        old_secret = settings.META_APP_SECRET
+        settings.META_APP_SECRET = "test_meta_app_secret_123"
+        try:
+            wa_resp = client.post("/api/v1/webhooks/whatsapp", json={"entry": [{"id": "123"}]})
+            if wa_resp.status_code != 401:
+                failures.append(f"Webhook WhatsApp deveria exigir X-Hub-Signature-256 (retornou {wa_resp.status_code})")
+            else:
+                print("  ✓ Webhook WhatsApp rejeita requisições não assinadas (401 Unauthorized).")
+        finally:
+            settings.META_APP_SECRET = old_secret
 
     # 6. Prevenção de Auto-Indicação Fraudulenta (ASVS 1.1)
     print("\n[ASVS 1.1] Verificando integridade das regras anti-fraude de rede...")

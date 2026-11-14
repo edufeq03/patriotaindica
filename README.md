@@ -21,33 +21,61 @@ O **Patriota Indica** opera como uma **Rede de Afinidade, Confiança e Clube de 
 
 ---
 
+## 🚩 Escopo do MVP & Mapa de Módulos (Sprint S3)
+
+O projeto opera sob uma arquitetura enxuta orientada a **Feature Flags** configuráveis em runtime através de variáveis de ambiente:
+
+### 🟢 Módulos do Núcleo Ativo (Core MVP)
+1. **Cadastro Unificado e Atômico (`/api/v1/businesses/register`):**
+   - Criação simultânea de conta de empresário (`role='owner'`) e negócio (`pending_review`).
+   - Suporte a múltiplos negócios vinculados ao mesmo proprietário.
+   - Emissão imediata de sessão via cookies `HttpOnly` no BFF do Next.js.
+2. **Vitrine Pública Inteligente (`/` e `/search`):**
+   - Busca geoespacial com PostGIS, ordenação por raio de proximidade e filtros de nichos.
+   - Regra unificada de visibilidade pública (`public_businesses`): exibe apenas negócios aprovados, ativos e sem exclusão lógica.
+3. **Módulo de Vagas Locais (`/jobs` e `/painel-empresa`):**
+   - Publicação de vagas pelas empresas cadastradas com moderação administrativa e selo "Contratando" nos cards da vitrine.
+4. **Triagem Administrativa (`/admin` e `/triage`):**
+   - Fila de curadoria com máquina de estados rigorosa, aprovação, rejeição com motivo e notas de auditoria.
+5. **Planos & Pagamentos (`FEATURE_PAYMENTS=true`):**
+   - Assinaturas e preferências de pagamento via Mercado Pago mantidas ativas para monetização do MVP.
+6. **Conformidade LGPD & Integridade:**
+   - Exclusão lógica (`deleted_at`), anonimização irreversível de titulares (`/privacy/admin/requests/{id}/anonymize`) e proteção referencial `ON DELETE RESTRICT` para histórico financeiro e fiscal.
+
+### ❄️ Módulos Congelados no MVP (Desativados por Flags)
+- `FEATURE_WHATSAPP_BOT=false`: Disparos automáticos e bot de captação de leads.
+- `FEATURE_NETWORK=false`: Rede de recomendações e endossos mútuos entre empresas.
+- `FEATURE_WAITLIST=false`: Lista de espera por cidades em expansão.
+- `FEATURE_ADMIN_TOOLS=false`: Convites VIP e importação em lote CSV legada.
+
+---
+
 ## 🏗️ Arquitetura do Sistema
 
 ```
 patriotaindica/
 ├── backend/                        # API REST assíncrona em FastAPI (Python 3.12)
 │   ├── app/
-│   │   ├── api/v1/endpoints/       # Busca PostGIS, empresas, triagem, painel do dono, pagamentos, whatsapp
-│   │   ├── core/                   # Configurações, banco assíncrono, Redis, rate limiting e segurança JWT/BFF
-│   │   ├── models/                 # Modelos SQLAlchemy (PostGIS Geography, PeerEndorsements, WhatsApp, Plans)
+│   │   ├── api/v1/endpoints/       # Busca PostGIS, empresas, triagem, painel do dono, pagamentos, vagas
+│   │   ├── core/                   # Configurações, bootstrap admin, rate limit Redis e JWT
+│   │   ├── models/                 # Modelos SQLAlchemy (PostGIS Geography, Jobs, Plans, Users, Business)
 │   │   ├── schemas/                # Schemas Pydantic v2 com validação estrita
-│   │   ├── services/               # WhatsApp Híbrido (Evolution + Meta Cloud), OTP seguro e Geocodificação
 │   │   └── main.py                 # Ponto de entrada FastAPI com middlewares de segurança OWASP
-│   ├── tests/                      # 99 testes automatizados (pytest + anyio)
+│   ├── tests/                      # 121+ testes automatizados (pytest + anyio)
 │   ├── requirements.txt            # Dependências Python
 │   ├── Dockerfile
 │   └── .env.example
 ├── frontend/                       # Aplicação Next.js 16 (Turbopack, SSR/SEO, Tailwind, BFF)
 │   ├── src/
-│   │   ├── app/                    # Rotas: /, /[city]/[category]/[slug], /q/[slug], /admin, /painel-empresa
-│   │   ├── components/             # BusinessProfileView, ManifestoModal, TrustCard
-│   │   └── lib/                    # Tipos, mock data e utilitários
+│   │   ├── app/                    # Rotas: /, /[city]/[category]/[slug], /admin, /painel-empresa
+│   │   ├── components/             # BusinessProfileView, ManifestoModal, BusinessJobsModal
+│   │   └── lib/                    # Tipos e utilitários
 │   ├── Dockerfile
 │   └── package.json
 ├── database/                       # Migrations SQL versionadas com SHA-256 e controle de drift
-│   ├── migrations/                 # 17 migrações SQL (001 a 017)
-│   └── scripts/                    # Runner Python migrate.py e anonimização LGPD
-├── scripts/                        # Scripts operacionais: backup AES-256, restore, ASVS audit e DR drill
+│   ├── migrations/                 # 21 migrações SQL (001 a 021_data_integrity.sql)
+│   └── scripts/                    # Runner oficial migrate.py
+├── scripts/                        # Scripts operacionais: backup AES-256, restore e testes
 ├── docker-compose.yml              # Orquestração PostGIS 16, Redis 7, Backend e Frontend
 └── .env.example                    # Modelo unificado de variáveis de ambiente
 ```

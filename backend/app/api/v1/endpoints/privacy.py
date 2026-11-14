@@ -161,3 +161,63 @@ async def revoke_consent(
         "business_id": business.id,
         "status": business.status,
     }
+
+
+@router.post("/admin/requests/{request_id}/anonymize")
+async def execute_anonymization_for_request(
+    request_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_active_admin),
+):
+    """
+    CONFORMIDADE LGPD (T2.3 / D5):
+    - Executa a anonimização e exclusão lógica solicitada pelo titular (Art. 18 LGPD).
+    - Empresas somem da vitrine pública (deleted_at preenchido e status suspenso).
+    - Dados pessoais identificáveis do titular são anonimizados.
+    - Histórico financeiro (payments/subscriptions) e auditoria (business_review_log)
+      são estritamente preservados com ON DELETE RESTRICT para conformidade legal.
+    """
+    stmt_req = select(DataSubjectRequest).where(DataSubjectRequest.id == request_id)
+    ds_req = (await db.execute(stmt_req)).scalar_one_or_none()
+    if not ds_req:
+        raise HTTPException(status_code=404, detail="Solicitação de titular não encontrada.")
+
+    now = datetime.now(timezone.utc)
+    target_email = ds_req.email.lower().strip()
+
+    # Busca usuário correspondente ao e-mail do pedido
+    stmt_user = select(User).where(User.email == target_email)
+    user = (await db.execute(stmt_user)).scalar_one_or_none()
+
+    anonymized_count = 0
+    if user:
+        # Anonimiza dados pessoais do usuário
+        user.name = "Titular Anonimizado (LGPD)"
+        user.email = f"anon_{user.id}@lgpd.patriotaindica.internal"
+        user.phone = None
+        user.password_hash = "ANONYMIZED_LGPD_ACCOUNT"
+        user.totp_secret = None
+        user.is_active = False
+        user.deleted_at = now
+
+        # Anonimiza e remove as empresas da vitrine pública
+        stmt_biz = select(Business).where(Business.owner_user_id == user.id)
+        businesses = (await db.execute(stmt_biz)).scalars().all()
+        for biz in businesses:
+            biz.deleted_at = now
+            biz.status = "suspended"
+            biz.owner_paused = True
+            biz.document_number = None
+            biz.whatsapp = "00000000000"
+            biz.phone = None
+            anonymized_count += 1
+
+    ds_req.status = "completed"
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Anonimização LGPD concluída com sucesso. {anonymized_count} empresa(s) removida(s) da vitrine e histórico preservado.",
+        "request_id": ds_req.id,
+        "status": ds_req.status,
+    }

@@ -11,7 +11,7 @@ class BusinessReviewLog(Base):
     __tablename__ = "business_review_log"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id", ondelete="RESTRICT"), nullable=False, index=True)
     from_status = Column(business_status_enum, nullable=True)
     to_status = Column(business_status_enum, nullable=False)
     note = Column(Text, nullable=True)

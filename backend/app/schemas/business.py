@@ -234,6 +234,17 @@ class BusinessApplicationCreate(BaseModel):
         return self
 
 
+class BusinessRegisterCreate(BusinessApplicationCreate):
+    """
+    T1.1: Cadastro único e atômico (Dono + Empresa).
+    Cria conta de usuário (role='owner') e empresa associada na mesma transação.
+    """
+    owner_name: str = Field(..., min_length=2, max_length=150, description="Nome completo do responsável/proprietário")
+    owner_email: EmailStr = Field(..., description="E-mail profissional ou de acesso do proprietário")
+    owner_password: str = Field(..., min_length=10, max_length=100, description="Senha de acesso ao painel (mínimo 10 caracteres)")
+    owner_phone: Optional[str] = Field(None, max_length=25, description="Telefone pessoal ou secundário do proprietário")
+
+
 class ReportCreate(BaseModel):
     """
     Submissão de denúncia (H2).

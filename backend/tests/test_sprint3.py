@@ -162,8 +162,10 @@ async def test_t3_4_cities_endpoint_and_waitlist(test_client):
 @pytest.mark.anyio
 async def test_t3_4_join_waitlist_increments_count(test_client):
     """
-    T3.4: Cadastrar na lista de espera incrementa interested_count da cidade.
+    T3.4: Cadastrar na lista de espera incrementa interested_count da cidade quando FEATURE_WAITLIST está habilitada.
     """
+    from backend.app.core.config import settings
+
     target_city_id = uuid.uuid4()
     mock_city = City(
         id=target_city_id,
@@ -183,14 +185,54 @@ async def test_t3_4_join_waitlist_increments_count(test_client):
 
     app.dependency_overrides[get_db] = override_db
     try:
-        res = test_client.post(
-            f"/api/v1/cities/{target_city_id}/waitlist",
-            json={"contact": "interessado@bh.com.br", "is_business": True},
-        )
-        assert res.status_code == 201, res.text
-        resp_data = res.json()
-        assert resp_data["success"] is True
-        assert resp_data["interested_count"] == 11
-        assert mock_city.interested_count == 11
+        with patch.object(settings, "FEATURE_WAITLIST", True):
+            res = test_client.post(
+                f"/api/v1/cities/{target_city_id}/waitlist",
+                json={"contact": "interessado@bh.com.br", "is_business": True},
+            )
+            assert res.status_code == 201, res.text
+            resp_data = res.json()
+            assert resp_data["success"] is True
+            assert resp_data["interested_count"] == 11
+            assert mock_city.interested_count == 11
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_t3_feature_flags_frozen_modules(test_client):
+    """
+    T3.1 (Sprint S3): Valida que módulos congelados respeitam as feature flags:
+    - FEATURE_WAITLIST = False bloqueia cadastro na lista de espera com HTTP 403.
+    - FEATURE_NETWORK = False bloqueia criação de endossos entre empresas com HTTP 403.
+    - FEATURE_PAYMENTS = True mantém o módulo de pagamentos do MVP ativo.
+    """
+    from backend.app.core.config import settings
+    from backend.app.core.security import get_current_user
+    from backend.app.models.user import User
+
+    # 1. Waitlist bloqueada quando FEATURE_WAITLIST = False
+    with patch.object(settings, "FEATURE_WAITLIST", False):
+        res_waitlist = test_client.post(
+            f"/api/v1/cities/{uuid.uuid4()}/waitlist",
+            json={"contact": "teste@exemplo.com", "is_business": True},
+        )
+        assert res_waitlist.status_code == 403
+        assert "suspensa" in res_waitlist.json()["detail"].lower()
+
+    # 2. Rede de recomendações bloqueada quando FEATURE_NETWORK = False
+    mock_user = User(id=uuid.uuid4(), name="Dono Teste", email="dono@rede.com", role="owner")
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+    try:
+        with patch.object(settings, "FEATURE_NETWORK", False):
+            res_network = test_client.post(
+                f"/api/v1/owner/{uuid.uuid4()}/endorsements",
+                json={"target_business_id": str(uuid.uuid4()), "relationship_type": "peer"},
+            )
+            assert res_network.status_code == 403
+            assert "congelado" in res_network.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    # 3. Módulo de Pagamentos / Planos ativo para MVP conforme decisão do dono
+    assert settings.FEATURE_PAYMENTS is True
+

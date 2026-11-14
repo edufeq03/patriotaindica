@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.core.config import settings
 from backend.app.core.database import get_db
 from backend.app.core.rate_limit import check_rate_limit, get_client_ip
 from backend.app.models.city import City, CityWaitlist
@@ -61,6 +62,12 @@ async def join_city_waitlist(
     """
     Cadastra interesse na lista de espera de cidades em expansão (T3.4).
     """
+    if not settings.FEATURE_WAITLIST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Lista de espera de cidades temporariamente suspensa nesta versão.",
+        )
+
     client_ip = get_client_ip(request)
     await check_rate_limit(
         key=f"ratelimit:waitlist:{client_ip}",

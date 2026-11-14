@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: Optional[str] = None
     ADMIN_PASSWORD: Optional[str] = None
 
+    # Feature Flags (Sprint S3 - Enxugar o projeto mantendo extensibilidade)
+    FEATURE_PAYMENTS: bool = True       # Mantido ativo para MVP (conforme solicitação do proprietário)
+    FEATURE_WHATSAPP_BOT: bool = False   # Congelado: leads e bot de WhatsApp automático
+    FEATURE_NETWORK: bool = False        # Congelado: rede de indicações entre empresas / endossos
+    FEATURE_WAITLIST: bool = False       # Congelado: lista de espera de expansão por cidades
+    FEATURE_ADMIN_TOOLS: bool = False    # Congelado: cadastro assistido em lote e convites legados
+
     # External APIs
     BRASILAPI_BASE_URL: str = "https://brasilapi.com.br/api"
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
