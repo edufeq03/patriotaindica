@@ -33,32 +33,21 @@ CREATE INDEX IF NOT EXISTS idx_businesses_deleted_at ON businesses (deleted_at);
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users (deleted_at);
 
 -- 4) FKs de auditoria e financeiro como RESTRICT (não apaga auditoria/financeiro em cascata)
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'business_review_log_business_id_fkey') THEN
-        ALTER TABLE business_review_log DROP CONSTRAINT business_review_log_business_id_fkey;
-    END IF;
-    ALTER TABLE business_review_log ADD CONSTRAINT business_review_log_business_id_fkey
-        FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE RESTRICT;
+ALTER TABLE business_review_log DROP CONSTRAINT IF EXISTS business_review_log_business_id_fkey;
+ALTER TABLE business_review_log ADD CONSTRAINT business_review_log_business_id_fkey
+    FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE RESTRICT;
 
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'job_review_log_job_id_fkey') THEN
-        ALTER TABLE job_review_log DROP CONSTRAINT job_review_log_job_id_fkey;
-    END IF;
-    ALTER TABLE job_review_log ADD CONSTRAINT job_review_log_job_id_fkey
-        FOREIGN KEY (job_id) REFERENCES job_openings(id) ON DELETE RESTRICT;
+ALTER TABLE job_review_log DROP CONSTRAINT IF EXISTS job_review_log_job_id_fkey;
+ALTER TABLE job_review_log ADD CONSTRAINT job_review_log_job_id_fkey
+    FOREIGN KEY (job_id) REFERENCES job_openings(id) ON DELETE RESTRICT;
 
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'payments_user_id_fkey') THEN
-        ALTER TABLE payments DROP CONSTRAINT payments_user_id_fkey;
-    END IF;
-    ALTER TABLE payments ADD CONSTRAINT payments_user_id_fkey
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
+ALTER TABLE payments ADD CONSTRAINT payments_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
-    IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'subscriptions_owner_user_id_fkey') THEN
-        ALTER TABLE subscriptions DROP CONSTRAINT subscriptions_owner_user_id_fkey;
-    END IF;
-    ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_owner_user_id_fkey
-        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT;
-END $$;
+ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_owner_user_id_fkey;
+ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_owner_user_id_fkey
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT;
 
 -- 5) Cidade por FK
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS city_id UUID REFERENCES cities(id) ON DELETE SET NULL;
