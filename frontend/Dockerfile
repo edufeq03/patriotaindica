@@ -2,6 +2,12 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+ENV CI=true
+ENV NEXT_TELEMETRY_DISABLED=1
+
+ARG JWT_SECRET_KEY
+ENV JWT_SECRET_KEY=$JWT_SECRET_KEY
+
 COPY package*.json ./
 RUN npm install
 

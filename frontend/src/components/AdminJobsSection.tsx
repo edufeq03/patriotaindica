@@ -185,8 +185,8 @@ export default function AdminJobsSection() {
       setTimeout(() => setDecisionFeedback(null), 5000);
       fetchMetrics();
       fetchJobs();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao processar decisão');
     } finally {
       setDecisionLoading(false);
     }
@@ -218,8 +218,8 @@ export default function AdminJobsSection() {
       setShowNewTermModal(false);
       setNewTermText('');
       fetchTerms();
-    } catch (err: any) {
-      setTermError(err.message);
+    } catch (err: unknown) {
+      setTermError(err instanceof Error ? err.message : 'Erro ao processar termo de moderação');
     } finally {
       setNewTermLoading(false);
     }
@@ -765,7 +765,7 @@ export default function AdminJobsSection() {
                   <label className="text-xs font-semibold text-slate-300">Categoria</label>
                   <select
                     value={newTermCategory}
-                    onChange={(e) => setNewTermCategory(e.target.value as any)}
+                    onChange={(e) => setNewTermCategory(e.target.value as 'discriminacao' | 'conviccao' | 'golpe' | 'improprio' | 'review')}
                     className="w-full px-3 py-2 bg-[#070b0e] border border-[#182836] rounded-xl text-xs text-white focus:border-blue-500 outline-none"
                   >
                     <option value="discriminacao">Discriminação</option>
@@ -780,7 +780,7 @@ export default function AdminJobsSection() {
                   <label className="text-xs font-semibold text-slate-300">Ação / Severidade</label>
                   <select
                     value={newTermSeverity}
-                    onChange={(e) => setNewTermSeverity(e.target.value as any)}
+                    onChange={(e) => setNewTermSeverity(e.target.value as 'block' | 'review')}
                     className="w-full px-3 py-2 bg-[#070b0e] border border-[#182836] rounded-xl text-xs text-white focus:border-blue-500 outline-none"
                   >
                     <option value="block">Bloqueio Automático (422)</option>

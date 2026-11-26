@@ -48,7 +48,7 @@ import {
 
 import AdminJobsSection from '@/components/AdminJobsSection';
 import { INITIAL_BUSINESSES, INITIAL_CATEGORIES } from '@/lib/mockData';
-import { Business, Category, ReviewLog } from '@/lib/types';
+import { Business, BusinessStatus, Category, ReviewLog } from '@/lib/types';
 
 interface BrasilApiResult {
   razao_social?: string;
@@ -216,38 +216,69 @@ export default function AdminDashboardPage() {
 
       const data = await res.json();
       if (data && Array.isArray(data.results)) {
-        const backendBusinesses: Business[] = data.results.map((item: any) => ({
+        interface TriageQueueItem {
+          id: string;
+          name?: string;
+          slug?: string;
+          description?: string;
+          listing_type?: 'product' | 'service';
+          service_mode?: 'at_location' | 'at_customer' | 'both' | 'online';
+          serves_at_location?: boolean;
+          serves_at_customer?: boolean;
+          serves_online?: boolean;
+          service_radius_km?: number;
+          primary_category?: string;
+          whatsapp?: string;
+          phone?: string;
+          website?: string;
+          instagram?: string;
+          street?: string;
+          number?: string;
+          neighborhood?: string;
+          city?: string;
+          state?: string;
+          postal_code?: string;
+          show_full_address?: boolean;
+          cnpj_situation?: string;
+          status?: BusinessStatus;
+          is_verified?: boolean;
+          document_type?: 'CNPJ' | 'CPF';
+          document_number?: string;
+          created_at?: string;
+        }
+
+        const backendBusinesses: Business[] = data.results.map((item: TriageQueueItem) => ({
           id: item.id,
-          name: item.name,
-          slug: item.slug,
+          name: item.name || '',
+          slug: item.slug || '',
           description: item.description || '',
           listing_type: item.listing_type || 'service',
           service_mode: item.service_mode || 'at_customer',
-          serves_at_location: item.serves_at_location ?? (item.service_mode === 'at_location' || item.service_mode === 'both'),
-          serves_at_customer: item.serves_at_customer ?? (item.service_mode === 'at_customer' || item.service_mode === 'both'),
-          serves_online: item.serves_online ?? (item.service_mode === 'online'),
+          serves_at_location: Boolean(item.serves_at_location ?? (item.service_mode === 'at_location' || item.service_mode === 'both')),
+          serves_at_customer: Boolean(item.serves_at_customer ?? (item.service_mode === 'at_customer' || item.service_mode === 'both')),
+          serves_online: Boolean(item.serves_online ?? (item.service_mode === 'online')),
           service_radius_km: item.service_radius_km || 20,
           category_name: item.primary_category || 'Serviços',
           category_slug: item.primary_category ? item.primary_category.toLowerCase().replace(/\s+/g, '-') : 'servicos',
-          whatsapp: item.whatsapp,
+          whatsapp: item.whatsapp || '',
           phone: item.phone || '',
           website: item.website || '',
           instagram: item.instagram || '',
           street: item.street || '',
           number: item.number || '',
-          neighborhood: item.neighborhood,
-          city: item.city,
-          state: item.state,
+          neighborhood: item.neighborhood || '',
+          city: item.city || '',
+          state: item.state || '',
           postal_code: item.postal_code || '',
           show_full_address: !!item.show_full_address,
           cnpj_situation: item.cnpj_situation || '',
           latitude: -22.9064,
           longitude: -47.0592,
-          status: item.status,
+          status: item.status || 'pending_review',
           is_verified: !!item.is_verified,
           document_type: item.document_type || 'CNPJ',
           document_number: item.document_number,
-          created_at: item.created_at,
+          created_at: item.created_at || new Date().toISOString(),
           accepted_manifesto: true,
         }));
 

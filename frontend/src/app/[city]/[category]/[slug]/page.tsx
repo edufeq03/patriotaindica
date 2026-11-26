@@ -59,7 +59,7 @@ async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
       if (res.ok) {
         const data = await res.json();
         if (data && data.id) {
-          const primaryCat = data.categories?.find((c: any) => c.is_primary) || data.categories?.[0];
+          const primaryCat = data.categories?.find((c: { is_primary?: boolean; name?: string; slug?: string }) => c.is_primary) || data.categories?.[0];
           const category_name = primaryCat?.name || (data.listing_type === 'product' ? 'Produtos' : 'Serviços');
           const category_slug = primaryCat?.slug || 'servicos';
 
@@ -88,7 +88,7 @@ async function fetchBusinessBySlug(slug: string): Promise<Business | null> {
             longitude: Number(data.longitude) || 0,
             logo_url: data.logo_url || undefined,
             banner_url: data.banner_url || undefined,
-            status: (data.status as any) || 'approved',
+            status: (data.status as 'approved' | 'pending_review' | 'needs_info' | 'rejected' | 'suspended') || 'approved',
             is_verified: !!data.is_verified,
             created_at: data.created_at || new Date().toISOString(),
             accepted_manifesto: true,

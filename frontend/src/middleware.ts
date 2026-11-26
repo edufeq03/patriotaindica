@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET_KEY || '';
-
-const secretKey = new TextEncoder().encode(JWT_SECRET || 'dev_insecure_key_for_build_only_32_chars_min');
+function getSecretKey(): Uint8Array {
+  const secret = process.env.JWT_SECRET_KEY;
+  return new TextEncoder().encode(secret || 'dev_insecure_key_for_build_only_32_chars_min');
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -34,6 +35,7 @@ export async function middleware(request: NextRequest) {
 
     if (accessToken) {
       try {
+        const secretKey = getSecretKey();
         const { payload } = await jwtVerify(accessToken, secretKey, {
           issuer: 'patriotaindica.com.br',
           audience: 'patriotaindica-users',

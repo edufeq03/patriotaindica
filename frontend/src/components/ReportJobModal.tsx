@@ -52,8 +52,9 @@ export default function ReportJobModal({
         setDetails('');
         onClose();
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || 'Erro ao enviar denúncia. Tente novamente.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao enviar denúncia. Tente novamente.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -103,7 +104,7 @@ export default function ReportJobModal({
               <label className="text-xs font-semibold text-slate-300">Motivo da Irregularidade</label>
               <select
                 value={reason}
-                onChange={(e) => setReason(e.target.value as any)}
+                onChange={(e) => setReason(e.target.value as 'golpe' | 'discriminacao' | 'improprio' | 'outro')}
                 className="w-full px-3 py-2 bg-[#070b0e] border border-[#182836] rounded-xl text-xs text-white focus:border-red-500 outline-none"
               >
                 <option value="golpe">Cobrança de taxa / Golpe / Dinheiro adiantado</option>

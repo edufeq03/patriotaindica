@@ -71,8 +71,10 @@ export default function BusinessJobsModal({
 
   useEffect(() => {
     if (!isOpen || !business) {
-      setJobs([]);
-      setError(null);
+      setTimeout(() => {
+        setJobs([]);
+        setError(null);
+      }, 0);
       return;
     }
 

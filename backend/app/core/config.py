@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # JWT Security - C1: Segredo obrigatório com validação rigorosa (default seguro para bootstrap/deploy)
-    JWT_SECRET_KEY: str = "f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782"
+    # JWT Security - C1: Segredo criptográfico obrigatório (gerado dinamicamente em dev/test, obrigatório em produção)
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_ISSUER: str = "patriotaindica.com.br"
     JWT_AUDIENCE: str = "patriotaindica-users"
@@ -151,27 +151,35 @@ class Settings(BaseSettings):
     @field_validator("JWT_SECRET_KEY", mode="before")
     @classmethod
     def strong_secret(cls, v: str) -> str:
-        DEFAULT_SAFE_KEY = "f78a2e19d6c4b50381e9f2a47d0c653891ba42e5d7c0836192fab4e1d3c50782"
+        import os
+        import secrets
+
+        is_test_or_dev = (
+            "PYTEST_CURRENT_TEST" in os.environ
+            or os.environ.get("ENVIRONMENT") in ("test", "development", "local")
+        )
+
         if v is None or (isinstance(v, str) and not v.strip()):
-            return DEFAULT_SAFE_KEY
+            if is_test_or_dev:
+                return secrets.token_hex(32)
+            raise ValueError(
+                "JWT_SECRET_KEY é obrigatória em ambiente de produção. Gere uma chave segura com 'openssl rand -hex 64'."
+            )
+
         v_str = str(v).strip()
         v_lower = v_str.lower()
         blocklist = ("sua_chave", "dev_key", "change", "secret", "example", "exemplo")
         for term in blocklist:
             if term in v_lower:
-                import os
-                if "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ENVIRONMENT") == "test":
-                    raise ValueError(
-                        f"JWT_SECRET_KEY contém termo proibido pela política de segurança: '{term}'. Gere uma chave criptográfica forte com openssl rand -hex 64."
-                    )
-                return DEFAULT_SAFE_KEY
-        if len(v_str) < 64:
-            import os
-            if "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ENVIRONMENT") == "test":
                 raise ValueError(
-                    "JWT_SECRET_KEY fraco ou curto. É obrigatório definir uma chave com no mínimo 64 caracteres gerada com 'openssl rand -hex 64'."
+                    f"JWT_SECRET_KEY contém termo proibido pela política de segurança: '{term}'. Gere uma chave criptográfica forte com openssl rand -hex 64."
                 )
-            return DEFAULT_SAFE_KEY
+
+        if len(v_str) < 64:
+            raise ValueError(
+                "JWT_SECRET_KEY fraco ou curto. É obrigatório definir uma chave com no mínimo 64 caracteres gerada com 'openssl rand -hex 64'."
+            )
+
         return v_str
 
     model_config = SettingsConfigDict(

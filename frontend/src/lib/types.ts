@@ -51,6 +51,13 @@ export interface Business {
   accepted_manifesto?: boolean;
   accepted_manifesto_at?: string;
   manifesto_version?: string;
+
+  // Informações de contratação (Módulo de Vagas T-V2.3)
+  hiring?: {
+    active?: boolean;
+    count?: number;
+    titles?: string[];
+  };
 }
 
 export interface ReviewLog {

@@ -1,0 +1,191 @@
+RELATÓRIO DE DIAGNÓSTICO — PATRIOTA INDICA
+================================================
+
+Data: 26/11/2026
+Repositório analisado: https://github.com/edufeq03/patriotaindica
+Commit analisado: afaa86f (main)
+
+1. RESUMO EXECUTIVO
+--------------------
+O projeto possui uma arquitetura organizada, com frontend em Next.js, backend em FastAPI, PostgreSQL/PostGIS, Redis e Docker Compose.
+
+Entretanto, foram encontrados bloqueios que impedem considerar o projeto pronto para um deploy confiável:
+
+- O build de produção do frontend falha por ausência da variável JWT_SECRET_KEY.
+- O lint do frontend falha com 38 erros e 74 avisos.
+- Os testes Python não foram executados porque pytest não está instalado no ambiente de análise.
+- Existe uma chave JWT padrão no código do backend, o que representa risco de segurança.
+- O npm reportou uma vulnerabilidade moderada em dependência.
+
+2. PROBLEMA CRÍTICO — BUILD DO FRONTEND
+----------------------------------------
+Comando executado:
+
+    npm run build
+
+Erro encontrado:
+
+    JWT_SECRET_KEY não definida nas variáveis de ambiente do Frontend.
+
+Arquivo relacionado:
+
+    frontend/src/lib/authServer.ts
+
+Causa provável:
+O docker-compose.yml fornece JWT_SECRET_KEY ao container em runtime, mas o Dockerfile executa "npm run build" durante a construção da imagem. Nesse momento, a variável ainda não está disponível para o Next.js.
+
+Solução recomendada:
+
+Opção A — Disponibilizar a variável durante o build do Docker:
+
+1. No frontend/Dockerfile, adicionar um ARG/ENV no estágio builder:
+
+    ARG JWT_SECRET_KEY
+    ENV JWT_SECRET_KEY=$JWT_SECRET_KEY
+
+2. No serviço frontend do docker-compose.yml, adicionar:
+
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+
+3. Definir JWT_SECRET_KEY no arquivo .env do deploy.
+
+Atenção: não colocar a chave real no GitHub.
+
+Opção B — Melhor abordagem arquitetural:
+Alterar authServer.ts para não exigir o segredo durante a avaliação do módulo no build, validando a variável somente quando uma rota autenticada for realmente executada. Ainda assim, a aplicação deve falhar de forma segura em produção se o segredo não existir.
+
+3. LINT DO FRONTEND
+--------------------
+Comando executado:
+
+    npm run lint
+
+Resultado:
+
+    38 erros
+    74 avisos
+
+Principais categorias:
+
+- Uso de any explícito.
+- setState chamado diretamente dentro de useEffect.
+- Dependências ausentes em arrays de useEffect.
+- Imports e variáveis não utilizados.
+- Uso de <img> em vez de next/image.
+
+Arquivos mais afetados:
+
+    frontend/src/components/AdminJobsSection.tsx
+    frontend/src/components/OwnerJobsSection.tsx
+    frontend/src/components/BusinessJobsModal.tsx
+    frontend/src/components/ReportJobModal.tsx
+
+Como resolver:
+
+1. Substituir any por interfaces/types específicos.
+2. Corrigir os useEffect para chamar funções assíncronas de forma controlada.
+3. Usar useCallback quando as funções forem dependências de efeitos.
+4. Incluir as dependências corretas nos arrays dos hooks.
+5. Remover imports e variáveis não utilizados.
+6. Avaliar a substituição de <img> por <Image> do next/image.
+7. Executar novamente:
+
+    npm run lint
+
+Não avançar para o próximo item enquanto os erros críticos do lint não forem resolvidos.
+
+4. TESTES DO BACKEND
+---------------------
+A compilação sintática do Python passou:
+
+    Python compile: OK
+
+Os testes não puderam ser executados porque pytest não estava instalado:
+
+    No module named pytest
+
+Como resolver:
+
+Dentro de um ambiente virtual do backend:
+
+    cd backend
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    pip install pytest pytest-asyncio anyio
+    cd ..
+    PYTHONPATH=. pytest backend/tests -q
+
+Se os testes exigirem PostgreSQL e Redis, executá-los com os serviços Docker ativos:
+
+    docker compose up -d db redis
+
+5. RISCO DE SEGURANÇA — JWT
+----------------------------
+Arquivo relacionado:
+
+    backend/app/core/config.py
+
+Foi encontrada uma chave JWT padrão diretamente no código. Mesmo sendo longa, qualquer instalação que não substitua JWT_SECRET_KEY poderá utilizar o mesmo segredo.
+
+Solução recomendada:
+
+1. Remover o segredo fixo do código.
+2. Tornar JWT_SECRET_KEY obrigatória em produção.
+3. Gerar uma chave nova e aleatória:
+
+    openssl rand -hex 64
+
+4. Armazenar a chave somente no .env do servidor ou nos Secrets do EasyPanel.
+5. Invalidar sessões existentes após a troca da chave.
+6. Confirmar que .env está no .gitignore e nunca foi publicado no GitHub.
+
+Também é recomendável não manter tokens ou senhas padrão para serviços externos.
+
+6. VULNERABILIDADE DE DEPENDÊNCIA
+----------------------------------
+O npm reportou:
+
+    1 moderate severity vulnerability
+
+Identificar o pacote responsável com:
+
+    cd frontend
+    npm audit
+
+Depois:
+
+    npm audit fix
+
+Não usar automaticamente "npm audit fix --force" sem revisar as alterações, pois isso pode atualizar versões principais e quebrar o projeto.
+
+7. ORDEM RECOMENDADA DE CORREÇÃO
+---------------------------------
+Prioridade 1 — Corrigir JWT_SECRET_KEY durante o build Docker.
+
+Prioridade 2 — Garantir que o segredo JWT de produção seja único e venha de variável segura.
+
+Prioridade 3 — Corrigir os 38 erros do lint do frontend.
+
+Prioridade 4 — Instalar as dependências de testes e executar pytest com PostgreSQL/Redis.
+
+Prioridade 5 — Investigar e corrigir a vulnerabilidade do npm.
+
+Prioridade 6 — Fazer novo build completo:
+
+    docker compose build --no-cache
+    docker compose up -d
+    docker compose ps
+    docker compose logs --tail=100 frontend backend
+
+8. CONCLUSÃO
+------------
+O projeto tem uma base funcional e uma estrutura razoável, mas ainda apresenta falhas de build, qualidade de código, testes e configuração de segurança.
+
+O primeiro bloqueio prático para o deploy é a disponibilidade de JWT_SECRET_KEY durante o build do frontend. Depois disso, o lint e os testes devem ser tratados antes de colocar a aplicação em produção.
+
+Este relatório foi baseado na análise estática do repositório e nos comandos executados. Não foram feitas alterações no código-fonte.

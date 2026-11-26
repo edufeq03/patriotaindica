@@ -95,7 +95,7 @@ export default function HomePage() {
   const [selectedType, setSelectedType] = useState<ListingType | 'all'>('all');
   const [maxDistanceKm, setMaxDistanceKm] = useState<number | null>(null);
   const [hiringOnly, setHiringOnly] = useState(false);
-  const [selectedJobsBusiness, setSelectedJobsBusiness] = useState<any>(null);
+  const [selectedJobsBusiness, setSelectedJobsBusiness] = useState<Business | null>(null);
 
   // Paginação de cards na vitrine
   const [currentPage, setCurrentPage] = useState(1);
@@ -202,7 +202,7 @@ export default function HomePage() {
         if (searchRes.ok) {
           const data = await searchRes.json();
           if (isMounted && data?.results && Array.isArray(data.results) && data.results.length > 0) {
-            setBusinesses(data.results.map((b: any) => ({
+            setBusinesses(data.results.map((b: Business) => ({
               ...b,
               status: b.status || 'approved',
               category_name: b.category_name || 'Serviços',
@@ -265,7 +265,7 @@ export default function HomePage() {
 
         // Filtro por empresas contratando (T-V2.3)
         if (hiringOnly) {
-          const isHiring = (b as any).hiring?.active || (typeof (b as any).hiring?.count === 'number' && (b as any).hiring.count > 0);
+          const isHiring = Boolean(b.hiring?.active || (typeof b.hiring?.count === 'number' && b.hiring.count > 0));
           if (!isHiring) return false;
         }
 
@@ -515,8 +515,8 @@ export default function HomePage() {
             };
 
             msg = data.detail
-              .map((err: any) => {
-                const fieldName = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : '';
+              .map((err: { loc?: (string | number)[]; msg?: string; message?: string }) => {
+                const fieldName = Array.isArray(err.loc) ? String(err.loc[err.loc.length - 1] || '') : '';
                 const label = fieldLabels[fieldName] || fieldName;
                 if (err.msg === 'Field required') {
                   return `O campo "${label}" é obrigatório.`;
@@ -1048,7 +1048,7 @@ export default function HomePage() {
                 {/* Footer do Card com CTA WhatsApp */}
                 <div className="p-5 pt-0 space-y-2">
                   {/* Selo e Ação de Vagas Abertas (T-V2.3) */}
-                  {Boolean((business as any).hiring?.active || (business as any).hiring?.count > 0) && (
+                  {Boolean(business.hiring?.active || (business.hiring?.count && business.hiring.count > 0)) && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1061,11 +1061,11 @@ export default function HomePage() {
                       <span className="flex items-center gap-1.5">
                         <Briefcase className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         <span>
-                          Contratando ({(business as any).hiring.count} {(business as any).hiring.count === 1 ? 'vaga' : 'vagas'})
+                          Contratando ({business.hiring?.count} {business.hiring?.count === 1 ? 'vaga' : 'vagas'})
                         </span>
                       </span>
                       <span className="text-[11px] text-slate-300 font-normal group-hover/job:underline flex items-center gap-0.5">
-                        Ver {(business as any).hiring.titles?.[0] ? `"${(business as any).hiring.titles[0]}"` : 'oportunidades'} →
+                        Ver {business.hiring?.titles?.[0] ? `"${business.hiring.titles[0]}"` : 'oportunidades'} →
                       </span>
                     </button>
                   )}

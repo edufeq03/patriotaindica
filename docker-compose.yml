@@ -67,10 +67,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
     restart: unless-stopped
     env_file:
       - .env
     environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - NEXT_PUBLIC_API_URL=/api/v1
       - INTERNAL_API_URL=http://backend:8000/api/v1
       - HOSTNAME=0.0.0.0

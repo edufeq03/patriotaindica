@@ -97,8 +97,8 @@ export default function OwnerJobsSection({
       }
       const data = await res.json();
       setJobs(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err.message || 'Erro ao consultar vagas.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao consultar vagas.');
     } finally {
       setLoading(false);
     }
@@ -183,8 +183,8 @@ export default function OwnerJobsSection({
       );
       setTimeout(() => setActionSuccess(null), 5000);
       fetchJobs();
-    } catch (err: any) {
-      setFormError(err.message || 'Falha ao salvar anúncio de vaga.');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Falha ao salvar anúncio de vaga.');
     } finally {
       setFormLoading(false);
     }
@@ -209,8 +209,8 @@ export default function OwnerJobsSection({
       );
       setTimeout(() => setActionSuccess(null), 4000);
       fetchJobs();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao alterar estado da vaga.');
     }
   };
 
@@ -230,8 +230,8 @@ export default function OwnerJobsSection({
       setActionSuccess(`Vaga "${job.title}" renovada por mais 30 dias!`);
       setTimeout(() => setActionSuccess(null), 4000);
       fetchJobs();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao renovar vaga.');
     }
   };
 
@@ -253,8 +253,8 @@ export default function OwnerJobsSection({
       setActionSuccess(`Vaga "${closingJob.title}" encerrada com sucesso.`);
       setTimeout(() => setActionSuccess(null), 4000);
       fetchJobs();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao encerrar vaga.');
     } finally {
       setCloseLoading(false);
     }

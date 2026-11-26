@@ -51,9 +51,9 @@ function isValidCnpj(cnpj: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
-  let body: any;
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json(
       { detail: 'Payload JSON inválido.' },

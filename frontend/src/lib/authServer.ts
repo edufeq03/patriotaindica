@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { SignJWT, jwtVerify } from 'jose';
 
-export const JWT_SECRET = process.env.JWT_SECRET_KEY || '';
-
-if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
-  throw new Error('JWT_SECRET_KEY não definida nas variáveis de ambiente do Frontend.');
+export function getJwtSecretKey(): Uint8Array {
+  const secret = process.env.JWT_SECRET_KEY;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET_KEY não definida nas variáveis de ambiente do Frontend.');
+    }
+    return new TextEncoder().encode('dev_insecure_key_for_build_only_32_chars_min');
+  }
+  return new TextEncoder().encode(secret);
 }
-
-export const secretKey = new TextEncoder().encode(JWT_SECRET || 'dev_insecure_key_for_build_only_32_chars_min');
 
 export interface AuthUserPayload {
   id: string;
@@ -17,6 +20,7 @@ export interface AuthUserPayload {
 }
 
 export async function createLocalSessionTokens(user: AuthUserPayload) {
+  const secretKey = getJwtSecretKey();
   const accessToken = await new SignJWT({
     sub: user.id,
     name: user.name,
@@ -46,6 +50,7 @@ export async function createLocalSessionTokens(user: AuthUserPayload) {
 
 export async function verifyTokenLocally(token: string): Promise<AuthUserPayload | null> {
   try {
+    const secretKey = getJwtSecretKey();
     const { payload } = await jwtVerify(token, secretKey, {
       issuer: 'patriotaindica.com.br',
       audience: 'patriotaindica-users',
