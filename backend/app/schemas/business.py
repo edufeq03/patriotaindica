@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from backend.app.core.validators import BRAZIL_STATES, INSTAGRAM_REGEX, validate_cnpj, validate_cpf
@@ -238,11 +238,38 @@ class BusinessRegisterCreate(BusinessApplicationCreate):
     """
     T1.1: Cadastro único e atômico (Dono + Empresa).
     Cria conta de usuário (role='owner') e empresa associada na mesma transação.
+    Aceita formato plano (flat) ou formato estruturado ({ owner, business, consents }).
     """
     owner_name: str = Field(..., min_length=2, max_length=150, description="Nome completo do responsável/proprietário")
     owner_email: EmailStr = Field(..., description="E-mail profissional ou de acesso do proprietário")
     owner_password: str = Field(..., min_length=10, max_length=100, description="Senha de acesso ao painel (mínimo 10 caracteres)")
     owner_phone: Optional[str] = Field(None, max_length=25, description="Telefone pessoal ou secundário do proprietário")
+
+    @model_validator(mode="before")
+    @classmethod
+    def flatten_nested_payload(cls, data: Any) -> Any:
+        if isinstance(data, dict) and ("business" in data or "owner" in data or "consents" in data):
+            flat = {}
+            if isinstance(data.get("business"), dict):
+                flat.update(data["business"])
+            if isinstance(data.get("owner"), dict):
+                owner = data["owner"]
+                if "name" in owner and "owner_name" not in flat:
+                    flat["owner_name"] = owner["name"]
+                if "email" in owner and "owner_email" not in flat:
+                    flat["owner_email"] = owner["email"]
+                if "password" in owner and "owner_password" not in flat:
+                    flat["owner_password"] = owner["password"]
+                if "phone" in owner and "owner_phone" not in flat:
+                    flat["owner_phone"] = owner["phone"]
+            if isinstance(data.get("consents"), dict):
+                flat.update(data["consents"])
+            # Preserva quaisquer campos de primeiro nível não aninhados
+            for k, v in data.items():
+                if k not in ("owner", "business", "consents") and k not in flat:
+                    flat[k] = v
+            return flat
+        return data
 
 
 class ReportCreate(BaseModel):

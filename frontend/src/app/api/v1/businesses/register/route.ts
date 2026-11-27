@@ -3,7 +3,21 @@ import { getBackendUrl, setAuthCookies } from '@/lib/authServer';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // Normaliza para formato plano caso venha aninhado ({ owner, business, consents })
+    const body =
+      rawBody && typeof rawBody === 'object' && ('business' in rawBody || 'owner' in rawBody || 'consents' in rawBody)
+        ? {
+            ...(typeof rawBody.business === 'object' ? rawBody.business : {}),
+            ...(typeof rawBody.consents === 'object' ? rawBody.consents : {}),
+            ...(rawBody.owner?.name ? { owner_name: rawBody.owner.name } : {}),
+            ...(rawBody.owner?.email ? { owner_email: rawBody.owner.email } : {}),
+            ...(rawBody.owner?.password ? { owner_password: rawBody.owner.password } : {}),
+            ...(rawBody.owner?.phone ? { owner_phone: rawBody.owner.phone } : {}),
+          }
+        : rawBody;
+
     const backendUrl = getBackendUrl();
     const clientIp =
       request.headers.get('cf-connecting-ip') ||
