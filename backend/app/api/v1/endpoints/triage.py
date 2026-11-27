@@ -66,8 +66,14 @@ async def get_triage_queue(
 
     items = []
     for b in businesses:
-        primary_cat = next((bc.category.name for bc in b.categories if bc.is_primary), None)
-        pending_niches = [bc.category.name for bc in b.categories if bc.category and bc.category.status == "pending"]
+        primary_cat = next(
+            (bc.category.name for bc in (b.categories or []) if bc.is_primary and bc.category),
+            next((bc.category.name for bc in (b.categories or []) if bc.category), None)
+        )
+        pending_niches = [
+            bc.category.name for bc in (b.categories or [])
+            if bc.category and getattr(bc.category, "status", None) == "pending"
+        ]
 
         items.append({
             "id": b.id,
@@ -89,9 +95,9 @@ async def get_triage_queue(
             "instagram": b.instagram or "",
             "street": b.street or "",
             "number": b.number or "",
-            "neighborhood": b.neighborhood,
-            "city": b.city,
-            "state": b.state,
+            "neighborhood": b.neighborhood or "",
+            "city": b.city or "",
+            "state": b.state or "",
             "postal_code": b.postal_code or "",
             "show_full_address": bool(b.show_full_address),
             "status": b.status,
